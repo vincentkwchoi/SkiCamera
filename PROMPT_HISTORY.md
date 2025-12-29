@@ -14,3 +14,18 @@
 - I open the app, and it closes rigth the way
 - if the phone is locked, and I long press the action button, it prompt me for passcode, can I configure it to be able to lauch skicamera without passcode?
 - check in all codes to https://github.com/vincentkwchoi/SkiCamera
+- I want to try LockedCameraCapture, elaborate on it.
+- I am on xcode 26.0.1 targetting iphone 15 pro with ios26 but I dont see Combined Locked Camera Capture or Locked Camera
+- ok SkiCapture created.
+- have you run flutter run --release?
+- I don't see SkiCapture as an optio in step 3
+- looks good i think
+- I don't see Main App: com.example.skicamera (or similar)
+- I still don't see skicapture in action button configuration
+- my phine is running ios26
+- still not seeing it
+- under camera i see photo, selfie, video, portrait, portrait selfie only
+- are you still thinking?
+- I dont see skicapture in step 4 Look in THAT list. "SkiCapture" should be an option there.
+- is that true?What the Action Button Supports... (App Intents info)
+- still don't see skiCapture in the list. re-read https://developer.apple.com/documentation/lockedcameracapture/creating-a-camera-experience-for-the-lock-screen
