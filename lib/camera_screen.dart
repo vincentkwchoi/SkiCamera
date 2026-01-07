@@ -87,6 +87,9 @@ class _CameraScreenState extends State<CameraScreen>
         case 'volumeDown':
           await _zoom(false);
           break;
+        case 'recordToggle':
+          await _toggleRecording();
+          break;
       }
     });
   }
@@ -220,29 +223,15 @@ class _CameraScreenState extends State<CameraScreen>
                 const Spacer(),
 
                 // Instructions
-                const Text(
-                  "Volume Buttons to Zoom",
-                  style: TextStyle(color: Colors.white70, fontSize: 16),
-                ),
-                const SizedBox(height: 20),
-
-                // Big Recording Button
-                GestureDetector(
-                  onTap: _toggleRecording,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: _isRecording ? Colors.red : Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.grey, width: 4),
-                    ),
-                    child: Center(
-                      child: Icon(
-                        _isRecording ? Icons.stop : Icons.videocam,
-                        size: 60,
-                        color: _isRecording ? Colors.white : Colors.black,
-                      ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20.0),
+                  child: Text(
+                    "Volume Buttons to Zoom\nLong press to Start/Stop Recording",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),

@@ -14,11 +14,13 @@ Create a mobile application (Flutter) designed specifically for ski coaches, ins
 - **Implementations**:
     - **iPhone 15/16 Pro**: Pressing the **Action Button**.
     - **Android (Samsung)**: Double-pressing the **Side Key** (Configurable in Settings > Advanced features > Side key).
+    - **Pixel 2**: Fully supported (Android 8.0+). Features "Jump to Camera" shortcut.
     - **Android (Pixel/Stock)**: Double-pressing the **Power Button** (Requires app to register as a Camera app or use third-party remapping tools).
 
 ### 2. Physical Button Zoom Control
 - **Volume Up**: Zoom In.
 - **Volume Down**: Zoom Out.
+- **Long Press (Either)**: Start/Stop Recording.
 - **Rationale**: Touch screens are difficult to use with gloves; physical buttons provide reliable tactile feedback.
 
 ## Target Audience
