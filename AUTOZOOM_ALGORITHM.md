@@ -15,10 +15,17 @@ Critical damping ($\zeta = 1$) is the specific tuning where a system returns to 
 The algorithm runs in a loop (e.g., 30 or 60 Hz) following these three phases:
 
 ### Phase A: Subject Detection (The Input)
-1.  **Detection**: Use a real-time object detector (e.g., YOLOv8-Nano, MediaPipe) to obtain the skier's bounding box.
-2.  **Current Scale ($S_{current}$)**:
+1.  **Detection**: Use **YOLOv8** (Nano or Small) for real-time object detection.
+    *   **Rationale**: YOLOv8 offers superior reliability for detecting small, distant, or partially occluded subjects (common in skiing) compared to MediaPipe Pose, which is optimized for larger, full-body subjects. MediaPipe Pose is used optionally for skeletal visualization but not for the primary tracking loop.
+2.  **Subject Selection (ByteTrack)**:
+    *   **Logic**: We use **ByteTrack** (via YOLOv8) which employs a Kalman Filter to track subjects across frames.
+    *   **First Lock**: Select the person closest to the **Frame Center** and assign them a `Target ID`.
+    *   **Tracking**: In subsequent frames, look specifically for the subject with the `Target ID`.
+    *   **Recovery**: If the `Target ID` is lost (e.g., extended occlusion), the system falls back to finding the closest candidate to the last known position to re-initialize tracking.
+    *   **Benefit**: Robustly handles mutual occlusion (skiers crossing paths) and brief disappearances (behind trees or snow spray).
+3.  **Current Scale ($S_{current}$)**:
     $$ S_{current} = \frac{\text{Height of Skier Bounding Box}}{\text{Total Frame Height}} $$
-3.  **Target Scale ($S_{target}$)**: Define the desired proportion of the frame the skier should fill (e.g., 0.4 or 40%).
+4.  **Target Scale ($S_{target}$)**: Define the desired proportion of the frame the skier should fill (e.g., 0.15 or 15%).
 
 ### Phase B: The Control Logic (The Brain)
 We use a **PD Controller (Proportional-Derivative)** tuned for critical damping. The Integral (I) term is skipped to avoid overshoot in fast-moving scenarios.
@@ -41,7 +48,7 @@ Human perception of zoom is logarithmic, not linear (1x to 2x feels the same as 
 
 | Component | Recommendation | Why? |
 | :--- | :--- | :--- |
-| **Tracker** | ByteTrack or Kalman Filter | Skiers move fast; prediction is needed if they are briefly obscured (e.g., snow spray). |
+| **Tracker** | ByteTrack (Kalman Filter) | Uses motion prediction to maintain ID across frames. Handles crossing paths and occlusion better than simple sticky tracking. |
 | **Smoothing** | Exponential Moving Average (EMA) | Raw bounding box data is jittery. Smooth the input before feeding it to the PID. |
 | **Constraint** | Rate Limiter | Limit the max "Zoom Speed" to avoid motion sickness. |
 
@@ -109,22 +116,22 @@ Since the camera operator will pan to follow the skier, we must adjust the algor
 ## 7. Auto-Pan (Digital Stabilization)
 To support "Auto-Pan" where the algorithm respects the operator's framing (e.g., keeping subject on the right vs. center):
 
-### The Concept: "Sticky Framing"
-Instead of forcing the subject to `Center (0.5, 0.5)`, we use a **Dynamic Setpoint** based on the operator's habits.
+### The Concept: "Proportional Framing"
+Instead of forcing the subject to `Center (0.5, 0.5)`, we use a **Proportional Panning** Strategy.
 
-1.  **Calculate Operator Intent**:
-    *   Continuously calculate the **Smoothed Subject Position** relative to the Full Sensor Frame.
-    *   Use a **Very Slow EMA** (e.g., $\alpha = 0.05$, ~1-2 sec lag) to determine where the operator "wants" the subject to be.
-    *   $$ P_{target} = \text{EMA}(P_{current}, \text{slow}) $$
-    
-2.  **Digital Crop Logic**:
-    *   **IF** the operator holds the subject at `90% Right` for >1 second, $P_{target}$ becomes `0.9`.
-    *   **IF** the camera shakes and the subject momentarily slips to `0.85`, the Digital Crop shifts to put them back at `0.9`.
-    *   **Result**: The video looks "locked on" to the subject at the position the operator chose.
+1.  **Proportional Mapping**:
+    *   The center of the **Zoomed Crop** matches the **Relative Position** of the skier in the **Full Frame**.
+    *   If the skier is at 90% right in the full frame, the crop centers at 90% right.
+    *   $$ P_{crop\_center} = P_{skier\_in\_full\_frame} $$
 
-**PID Control for Pan**:
-Use the same **Critically Damped PID** to move the Digital Crop window center towards the $P_{target}$.
-*   **Error** = $P_{target} - P_{subject\_in\_crop}$
+2.  **Why?**:
+    *   This preserves the "relative positioning" chosen by the operator.
+    *   It effectively locks the subject in place relative to the screen borders, without the lag of a PID controller for panning.
+    *   PIDs are used *only* for the Zoom axis; Pan is direct (smoothed) mapping.
+
+**PID Control**:
+*   **Zoom**: Critically Damped PID.
+*   **Pan**: Bypassed (Direct Proportional Mapping).
 
 ## 8. Calibration & Testing Module
 To verify the smooth mechanics without hitting the slopes, we will build a **Real-Time Interactive Simulator**.

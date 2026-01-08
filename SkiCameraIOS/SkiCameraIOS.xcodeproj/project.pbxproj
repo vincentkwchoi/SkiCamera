@@ -10,9 +10,22 @@
 		49EF4A592F0F18FD00127BBE /* SkiCameraIOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SkiCameraIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		49F724342F0F4A790008321F /* Exceptions for "SkiCameraIOS" folder in "SkiCameraIOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 49EF4A582F0F18FD00127BBE /* SkiCameraIOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		49EF4A5B2F0F18FD00127BBE /* SkiCameraIOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				49F724342F0F4A790008321F /* Exceptions for "SkiCameraIOS" folder in "SkiCameraIOS" target */,
+			);
 			path = SkiCameraIOS;
 			sourceTree = "<group>";
 		};
