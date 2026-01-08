@@ -46,6 +46,24 @@ struct ContentView: View {
                             .overlay {
                                 // Bounding Box Overlay
                                 GeometryReader { geo in
+                                    // Draw All Detections (Gray)
+                                    ForEach(previewViewModel.allDetectedRects.indices, id: \.self) { index in
+                                        let rect = previewViewModel.allDetectedRects[index]
+                                        Path { path in
+                                            let w = geo.size.width
+                                            let h = geo.size.height
+                                            
+                                            let left = rect.left * w
+                                            let top = rect.top * h
+                                            let width = rect.width * w
+                                            let height = rect.height * h
+                                            
+                                            path.addRect(CGRect(x: left, y: top, width: width, height: height))
+                                        }
+                                        .stroke(Color.white.opacity(0.5), lineWidth: 2)
+                                    }
+                                    
+                                    // Draw Primary Target (Green)
                                     if let rect = previewViewModel.detectedRect {
                                         Path { path in
                                             let w = geo.size.width

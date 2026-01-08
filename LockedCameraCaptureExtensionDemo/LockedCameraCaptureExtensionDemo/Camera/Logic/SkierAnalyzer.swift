@@ -27,7 +27,7 @@ class SkierAnalyzer {
         self.request.imageCropAndScaleOption = .scaleFill
     }
     
-    func analyze(pixelBuffer: CVPixelBuffer, completion: @escaping (Rect?) -> Void) {
+    func analyze(pixelBuffer: CVPixelBuffer, completion: @escaping ((Rect?, [Rect])?) -> Void) {
         
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
         
@@ -52,10 +52,20 @@ class SkierAnalyzer {
                 return
             }
             
+            // Convert all observations to our Rect format
+            let allRects = persons.map { person -> Rect in
+                let vRect = person.boundingBox
+                let left = vRect.minX
+                let top = 1.0 - (vRect.minY + vRect.height)
+                let right = left + vRect.width
+                let bottom = top + vRect.height
+                return Rect.fromLTRB(left, top, right, bottom)
+            }
+            
             // Sticky Tracking: Select closest to lastKnownCenter or frame center
             let targetPoint = lastKnownCenter ?? CGPoint(x: 0.5, y: 0.5)
             
-            let person = persons.min(by: { p1, p2 in
+            let bestPerson = persons.min(by: { p1, p2 in
                 let c1 = CGPoint(x: p1.boundingBox.midX, y: p1.boundingBox.midY)
                 let c2 = CGPoint(x: p2.boundingBox.midX, y: p2.boundingBox.midY)
                 
@@ -63,44 +73,21 @@ class SkierAnalyzer {
                 let dist2 = pow(c2.x - targetPoint.x, 2) + pow(c2.y - targetPoint.y, 2)
                 
                 return dist1 < dist2
-            })!
+            })
             
-            // Update state
-            lastKnownCenter = CGPoint(x: person.boundingBox.midX, y: person.boundingBox.midY)
+            var primaryRect: Rect? = nil
+            if let best = bestPerson {
+                lastKnownCenter = CGPoint(x: best.boundingBox.midX, y: best.boundingBox.midY)
+                
+                let vRect = best.boundingBox
+                let left = vRect.minX
+                let top = 1.0 - (vRect.minY + vRect.height)
+                let right = left + vRect.width
+                let bottom = top + vRect.height
+                primaryRect = Rect.fromLTRB(left, top, right, bottom)
+            }
             
-            // Vision Coords: (0,0) is Bottom-Left. Normalized 0..1
-            // We need Top-Left normalized.
-            // Rect (x, y, w, h)
-            // Vision y is from bottom.
-            // Converted Y (top-left origin) = 1.0 - (y + height)
-            
-            let vRect = person.boundingBox
-            
-            // Fix Coordinate System
-            // Vision: Origin Bottom-Left.
-            // Target: Origin Top-Left.
-            // x = x
-            // y_top = 1.0 - (y_bottom + height)
-            
-            let left = vRect.minX
-            let bottomFromVision = vRect.minY // Distance from bottom
-            let height = vRect.height
-            
-            // Top in Top-Left coords = 1.0 - (bottomFromVision + height) -> No
-            // Let's trace.
-            // Vision Y=0 is bottom. Y=1 is top.
-            // A box at bottom: y=0, h=0.2.
-            // In Top-Left: Top is at 1.0 - (0 + 0.2) = 0.8?
-            // Wait.
-            // TL(0,0) is Top.
-            // TL y = (1 - VisionMaxY)
-            
-            let top = 1.0 - (vRect.minY + vRect.height)
-            let right = left + vRect.width
-            let bottom = top + vRect.height
-            
-            let rect = Rect.fromLTRB(left, top, right, bottom)
-            completion(rect)
+            completion((primaryRect, allRects))
             
         } catch {
             print("Vision failed: \(error)")

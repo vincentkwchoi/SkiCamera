@@ -12,6 +12,7 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     @Published private(set) var previewImage: CIImage? = nil
     @Published private(set) var renderer = MetalRenderer()
     @Published var detectedRect: Rect? = nil
+    @Published var allDetectedRects: [Rect] = []
     @Published var debugLabel: String = "Initializing..."
     @Published var skierHeight: Double = 0.0
     @Published var currentZoom: CGFloat = 1.0
@@ -29,7 +30,6 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     private var manualZoomFactor: CGFloat = 1.0
     private let zoomStep: CGFloat = 0.2
     
-
     
     func initializeRenderer() {
         renderer.initializeCIContext(colorSpace: nil, name: "preview")
@@ -56,13 +56,27 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         // 2. AutoZoom Analysis
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
-        analyzer.analyze(pixelBuffer: pixelBuffer) { [weak self] rect in
+        analyzer.analyze(pixelBuffer: pixelBuffer) { [weak self] resultTuple in
             guard let self = self else { return }
             
-            // Logic Loop
-            guard let detected = rect else {
+            // Unpack tuple (primary: Rect?, all: [Rect])?
+            guard let tuple = resultTuple else {
                 DispatchQueue.main.async {
                     self.detectedRect = nil
+                    self.allDetectedRects = []
+                    self.debugLabel = "Label: None"
+                }
+                return
+            }
+            
+            let primaryRect = tuple.0
+            let allRects = tuple.1
+            
+            // Logic Loop
+            guard let detected = primaryRect else {
+                DispatchQueue.main.async {
+                    self.detectedRect = nil
+                    self.allDetectedRects = allRects
                     self.debugLabel = "Label: None"
                 }
                 return
@@ -72,6 +86,7 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             if self.isManualZoomMode {
                 DispatchQueue.main.async {
                     self.detectedRect = detected
+                    self.allDetectedRects = allRects
                     self.skierHeight = detected.height
                     self.debugLabel = "Label: Person (Manual)"
                     // self.currentZoom is updated by manual zoom methods
@@ -88,6 +103,7 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             // Update UI
             DispatchQueue.main.async {
                 self.detectedRect = detected
+                self.allDetectedRects = allRects
                 self.skierHeight = detected.height
                 self.debugLabel = "Label: Person"
                 self.currentZoom = targetZoom
