@@ -178,6 +178,23 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             self.manualZoomFactor = current
         }
     }
+    
+    // Resume Auto Zoom (Simultaneous Press)
+    func resetToAutoZoom() {
+        guard let device = videoDevice else { return }
+        
+        // Stop any active manual ramp
+        stopZooming()
+        
+        // Sync internal state to prevent jumping
+        autoZoomManager.syncZoomState(zoomFactor: device.videoZoomFactor)
+        
+        DispatchQueue.main.async {
+            self.isManualZoomMode = false
+            self.debugLabel = "Label: Auto Resumed"
+            self.buttonStatus = "Auto Zoom Active"
+        }
+    }
 
     func zoomIn() {
         // Fallback or single tap behavior (optional, or just ramp briefly)

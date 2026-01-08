@@ -30,6 +30,10 @@ struct ContentView: View {
         self._viewModel = StateObject(wrappedValue: mainViewModel)
     }
     
+    // State for Simultaneous Press Detection
+    @State private var isVolDownPressed = false
+    @State private var isVolUpPressed = false
+    
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.showNoPermissionHint {
@@ -65,14 +69,15 @@ struct ContentView: View {
                     .overlay(alignment: .top) {
                         // Debug Info Overlay
                         VStack(alignment: .leading) {
-                            Text(previewViewModel.debugLabel)
-                                .foregroundColor(.green)
-                            Text("H: \(String(format: "%.2f", previewViewModel.skierHeight)) / 0.15")
+                            Text(previewViewModel.isManualZoomMode ? "MANUAL ZOOM" : "AUTO ZOOM")
+                                .foregroundColor(previewViewModel.isManualZoomMode ? .orange : .green)
+                            Text("Skier Height: \(String(format: "%.2f", previewViewModel.skierHeight))")
                                 .foregroundColor(.white)
                             Text("Zoom: \(String(format: "%.2f", previewViewModel.currentZoom))x")
                                 .foregroundColor(.yellow)
-                            Text(previewViewModel.buttonStatus)
-                                .foregroundColor(.cyan)
+                            Text(previewViewModel.debugLabel)
+                                .foregroundColor(.gray)
+                                .font(.system(size: 14))
                         }
                         .font(.system(size: 16, weight: .bold, design: .monospaced))
                         .padding()
@@ -101,20 +106,32 @@ struct ContentView: View {
         .animation(.default, value: captureProcessor.saveResultText)
         .onPressCapture(
             onPress: {
-                // Primary action (Volume Down)
-                previewViewModel.buttonStatus = "Volume DOWN held"
-                previewViewModel.startZoomingOut()
+                // Primary action (Volume Down / Shutter)
+                isVolDownPressed = true
+                if isVolUpPressed {
+                    previewViewModel.resetToAutoZoom()
+                } else {
+                    previewViewModel.buttonStatus = "Volume DOWN held"
+                    previewViewModel.startZoomingOut()
+                }
             },
             onRelease: {
+                isVolDownPressed = false
                 previewViewModel.buttonStatus = "Volume DOWN released"
                 previewViewModel.stopZooming()
             },
             secondaryPress: {
                 // Secondary action (Volume Up)
-                previewViewModel.buttonStatus = "Volume UP held"
-                previewViewModel.startZoomingIn()
+                isVolUpPressed = true
+                if isVolDownPressed {
+                    previewViewModel.resetToAutoZoom()
+                } else {
+                    previewViewModel.buttonStatus = "Volume UP held"
+                    previewViewModel.startZoomingIn()
+                }
             },
             secondaryRelease: {
+                isVolUpPressed = false
                 previewViewModel.buttonStatus = "Volume UP released"
                 previewViewModel.stopZooming()
             }

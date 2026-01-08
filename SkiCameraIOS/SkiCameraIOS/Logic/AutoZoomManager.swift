@@ -125,4 +125,15 @@ class AutoZoomManager {
         let half = scale / 2.0
         return Rect.fromLTRB(cx - half, cy - half, cx + half, cy + half)
     }
+    
+    // Resume Logic: Sync internal state with actual camera zoom
+    func syncZoomState(zoomFactor: Double) {
+        // scale = 1.0 / zoomFactor
+        self.currentZoomScale = 1.0 / max(1.0, zoomFactor)
+        
+        // Reset smoothers to avoid old data dragging the result
+        heightSmoother.reset()
+        centerXSmoother.reset()
+        centerYSmoother.reset()
+    }
 }
