@@ -29,3 +29,12 @@
 - I dont see skicapture in step 4 Look in THAT list. "SkiCapture" should be an option there.
 - is that true?What the Action Button Supports... (App Intents info)
 - still don't see skiCapture in the list. re-read https://developer.apple.com/documentation/lockedcameracapture/creating-a-camera-experience-for-the-lock-screen
+- Porting to Native Android and sharing auto-zoom logic between iOS and Android.
+- how to run on android?
+- does android studio has agenic ai capability?
+- update MISSION.md (native targets, auto zoom, 3s recording)
+- is AUTOZOOM_ALGORITHM.md cross platform?
+- create android flavor of ARCHITECTURE.md
+- create new android project in SKiCamera/SkiCameraAndroid and implement the app there.
+- can I run SkiCameraAndroid in antigravity?
+- what capability is implemeted in SkiCameraAndroid?

@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.vcnt.skicamera.android.app-mergeDebugResources-49:/values-ldltr-v21/values-ldltr-v21.xml",
+            "map": [
+                {
+                    "source": "/Users/vincentchoi/.gradle/caches/8.9/transforms/b2711d6914285c902fc5a281ef521cb0/transformed/appcompat-1.1.0/res/values-ldltr-v21/values-ldltr-v21.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "112",
+                        "endOffsets": "163"
+                    }
+                }
+            ]
+        }
+    ]
+}

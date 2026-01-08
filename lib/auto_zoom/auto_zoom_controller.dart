@@ -128,15 +128,19 @@ class AutoZoomManager {
     double targetPanX = _targetFramingXIntent.filter(smoothedCenterX);
     double targetPanY = _targetFramingYIntent.filter(smoothedCenterY);
 
-    // 3. ZOOM Logic (PID)
-    // We work in Log space for zoom to make it linear to human perception
     // 3. ZOOM Logic (Simple P-Control on Velocity)
     // Complex PID on Scale Velocity proved unstable/oscillatory in tests.
     // Switching to direct P-Control:
     // If Error > 0 (Subject too small), we need to Shrink Scale (Zoom In).
     // Velocity should be negative relative to scale size.
 
-    double currentSkierHeightInCrop = smoothedHeight / _currentZoomScale;
+    // Hardware Zoom Adaptation:
+    // The input 'skierRect' is already from the ZOOMED image.
+    // So 'smoothedHeight' IS the height in the current crop.
+    // We should NOT divide by _currentZoomScale.
+
+    double currentSkierHeightInCrop =
+        smoothedHeight; // / _currentZoomScale; (Removed for Closed Loop)
     double zoomError = targetSubjectHeightRatio - currentSkierHeightInCrop;
 
     // Zoom Speed Factor (Gain)

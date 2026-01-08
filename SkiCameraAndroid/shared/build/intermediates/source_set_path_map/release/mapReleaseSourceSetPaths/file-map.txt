@@ -1,0 +1,9 @@
+com.vcnt.skicamera.shared-pngs-0 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/build/generated/res/pngs/release
+com.vcnt.skicamera.shared-resValues-1 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/build/generated/res/resValues/release
+com.vcnt.skicamera.shared-mergeReleaseResources-2 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/build/intermediates/incremental/release/mergeReleaseResources/merged.dir
+com.vcnt.skicamera.shared-mergeReleaseResources-3 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/build/intermediates/incremental/release/mergeReleaseResources/stripped.dir
+com.vcnt.skicamera.shared-release-4 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/build/intermediates/merged_res/release/mergeReleaseResources
+com.vcnt.skicamera.shared-androidMain-5 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/src/androidMain/res
+com.vcnt.skicamera.shared-androidRelease-6 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/src/androidRelease/res
+com.vcnt.skicamera.shared-main-7 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/src/main/res
+com.vcnt.skicamera.shared-release-8 /Users/vincentchoi/development/SkiCamera/SkiCameraAndroid/shared/src/release/res
