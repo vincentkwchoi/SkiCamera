@@ -17,6 +17,7 @@ The algorithm runs in a loop (e.g., 30 or 60 Hz) following these three phases:
 ### Phase A: Subject Detection (The Input)
 1.  **Detection**: Use **YOLOv8** (Nano or Small) for real-time object detection.
     *   **Rationale**: YOLOv8 offers superior reliability for detecting small, distant, or partially occluded subjects (common in skiing) compared to MediaPipe Pose, which is optimized for larger, full-body subjects. MediaPipe Pose is used optionally for skeletal visualization but not for the primary tracking loop.
+    *   **iOS Implementation**: MUST convert the model to **CoreML** format (`.mlpackage`) with **Non-Maximum Suppression (NMS)** baked in. This allows the model to run on the **Apple Neural Engine (ANE)**, ensuring high performance (>60 FPS) and low battery consumption. Raw PyTorch models on CPU are not viable.
 2.  **Subject Selection (ByteTrack)**:
     *   **Logic**: We use **ByteTrack** (via YOLOv8) which employs a Kalman Filter to track subjects across frames.
     *   **First Lock**: Select the person closest to the **Frame Center** and assign them a `Target ID`.

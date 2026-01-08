@@ -1,44 +1,72 @@
 import Foundation
 import Vision
 import CoreImage
+import CoreML
 
 class SkierAnalyzer {
     
-    private var completion: ((Rect?) -> Void)?
-    private var sequenceHandler = VNSequenceRequestHandler()
+    // State
+    private var lastKnownCenter: CGPoint?
     
-    // Config
-    private let humanRequest = VNDetectHumanRectanglesRequest()
+    // YOLOv8 Model
+    private let model: VNCoreMLModel
+    private let request: VNCoreMLRequest
     
     init() {
-        humanRequest.upperBodyOnly = false // Force full body detection
+        // Load YOLOv8 CoreML model
+        guard let mlModel = try? yolov8n(configuration: MLModelConfiguration()).model else {
+            fatalError("Failed to load yolov8n model")
+        }
+        
+        guard let visionModel = try? VNCoreMLModel(for: mlModel) else {
+            fatalError("Failed to create VNCoreMLModel")
+        }
+        
+        self.model = visionModel
+        self.request = VNCoreMLRequest(model: visionModel)
+        self.request.imageCropAndScaleOption = .scaleFill
     }
     
     func analyze(pixelBuffer: CVPixelBuffer, completion: @escaping (Rect?) -> Void) {
         
-        // Vision request
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
-        // Note: Orientation .right means Home button on right (Landscape). 
-        // We assume the sensor raw data is landscape. AVFoundation usually delivers landscape buffers.
         
         do {
-            try handler.perform([humanRequest])
+            try handler.perform([request])
             
-            guard let observations = humanRequest.results, !observations.isEmpty else {
+            guard let results = request.results as? [VNRecognizedObjectObservation] else {
+                self.lastKnownCenter = nil
                 completion(nil)
                 return
             }
             
-            // Heuristic: Select person CLOSEST TO CENTER
-            // Center is (0.5, 0.5)
-            // Vision BoundingBox is normalized 0..1
-            let person = observations.min(by: { p1, p2 in
+            // Filter for "person" class (class 0 in COCO)
+            let persons = results.filter { observation in
+                guard let label = observation.labels.first?.identifier else { return false }
+                return label == "person"
+            }
+            
+            guard !persons.isEmpty else {
+                self.lastKnownCenter = nil
+                completion(nil)
+                return
+            }
+            
+            // Sticky Tracking: Select closest to lastKnownCenter or frame center
+            let targetPoint = lastKnownCenter ?? CGPoint(x: 0.5, y: 0.5)
+            
+            let person = persons.min(by: { p1, p2 in
                 let c1 = CGPoint(x: p1.boundingBox.midX, y: p1.boundingBox.midY)
                 let c2 = CGPoint(x: p2.boundingBox.midX, y: p2.boundingBox.midY)
-                let dist1 = pow(c1.x - 0.5, 2) + pow(c1.y - 0.5, 2)
-                let dist2 = pow(c2.x - 0.5, 2) + pow(c2.y - 0.5, 2)
+                
+                let dist1 = pow(c1.x - targetPoint.x, 2) + pow(c1.y - targetPoint.y, 2)
+                let dist2 = pow(c2.x - targetPoint.x, 2) + pow(c2.y - targetPoint.y, 2)
+                
                 return dist1 < dist2
             })!
+            
+            // Update state
+            lastKnownCenter = CGPoint(x: person.boundingBox.midX, y: person.boundingBox.midY)
             
             // Vision Coords: (0,0) is Bottom-Left. Normalized 0..1
             // We need Top-Left normalized.

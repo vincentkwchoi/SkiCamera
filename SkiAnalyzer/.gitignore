@@ -5,3 +5,4 @@ __pycache__/
 *.caffemodel
 *.prototxt
 .DS_Store
+venv311/

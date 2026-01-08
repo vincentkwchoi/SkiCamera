@@ -68,13 +68,6 @@ class AutoZoomManager {
     private let centerXSmoother = SmoothingFilter(alpha: 0.2)
     private let centerYSmoother = SmoothingFilter(alpha: 0.2)
     
-    // Sticky Framing
-    private let targetFramingXIntent = SmoothingFilter(alpha: 0.05)
-    private let targetFramingYIntent = SmoothingFilter(alpha: 0.05)
-    
-    private let panXPid = PIDController(kp: 1.0, kd: 0.5)
-    private let panYPid = PIDController(kp: 1.0, kd: 0.5)
-    
     // State
     private var currentZoomScale: Double = 1.0 // 1.0 = Full Frame
     private var currentCropCenterX: Double = 0.5
@@ -83,7 +76,6 @@ class AutoZoomManager {
     // Config
     var targetSubjectHeightRatio: Double = 0.15
     var maxZoomSpeed: Double = 5.0
-    var maxPanSpeed: Double = 5.0
     
     func update(skierRect: Rect, dt: Double) -> Rect {
         if dt <= 0 {
@@ -95,11 +87,7 @@ class AutoZoomManager {
         let smoothedCenterX = centerXSmoother.filter(skierRect.centerX)
         let smoothedCenterY = centerYSmoother.filter(skierRect.centerY)
         
-        // 2. Sticky Framing Intent
-        let targetPanX = targetFramingXIntent.filter(smoothedCenterX)
-        let targetPanY = targetFramingYIntent.filter(smoothedCenterY)
-        
-        // 3. Zoom Logic
+        // 2. Zoom Logic
         // iOS Vision receives the ZOOMED buffer. So 'smoothedHeight' IS the height in crop.
         // We do NOT need to divide by currentZoomScale.
         // let currentSkierHeightInCrop = smoothedHeight / currentZoomScale
@@ -113,22 +101,16 @@ class AutoZoomManager {
         let scaleChange = -zoomError * kZoom * dt
         currentZoomScale += scaleChange
         
-        // Clamp (0.1 = 10x Zoom, 1.0 = 1x Zoom)
-        // Note: iOS videoZoomFactor is 1.0 -> 20.0 (Reciprocal of scale)
-        // Here we track 'Scale' (FOV portion). 1.0 is full, 0.1 is 10% FOV.
+        // Clamp (0.05 = 20x Zoom, 1.0 = 1x Zoom)
         currentZoomScale = max(0.05, min(1.0, currentZoomScale))
         
-        // 4. Pan Logic
-        let panXError = targetPanX - currentCropCenterX
-        let panYError = targetPanY - currentCropCenterY
+        // 3. Pan Logic (Proportional Panning)
+        // Direct Mapping: Crop Center = Skier Center (Smoothed)
+        // This ensures the subject's relative position in crop matches full frame.
+        currentCropCenterX = smoothedCenterX
+        currentCropCenterY = smoothedCenterY
         
-        let panXVel = max(-maxPanSpeed, min(maxPanSpeed, panXPid.update(panXError, dt)))
-        let panYVel = max(-maxPanSpeed, min(maxPanSpeed, panYPid.update(panYError, dt)))
-        
-        currentCropCenterX += panXVel * dt
-        currentCropCenterY += panYVel * dt
-        
-        // Clamp Center
+        // Clamp Center so crop doesn't go out of bounds
         let halfScale = currentZoomScale / 2.0
         let minCenter = halfScale
         let maxCenter = 1.0 - halfScale
