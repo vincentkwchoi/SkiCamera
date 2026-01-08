@@ -121,6 +121,7 @@
 				Camera/ViewModel/MainViewModel.swift,
 				Intent/AppCaptureIntent.swift,
 				Localizable.xcstrings,
+				yolov8n.mlpackage,
 			);
 			target = 22DE8DF02C74B3CA00FC6EEA /* LockedExtension */;
 		};

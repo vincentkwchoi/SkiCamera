@@ -5,12 +5,13 @@ import Combine
 
 class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureFileOutputRecordingDelegate {
     
-    // MARK: - Published State
     @Published var isRecording = false
     @Published var currentZoom: CGFloat = 1.0
     @Published var detectedRect: Rect? = nil
     @Published var skierHeight: Double = 0.0
     @Published var debugLabel: String = "Initializing..."
+    @Published var buttonStatus: String = "No button pressed"
+    @Published var isManualZoomMode: Bool = false
     
     // MARK: - Capture Session
     public let session = AVCaptureSession()
@@ -25,11 +26,17 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
     private let analyzer = SkierAnalyzer()
     private let autoZoomManager = AutoZoomManager()
     
+    // Manual Zoom
+    private var manualZoomFactor: CGFloat = 1.0
+    private let zoomStep: CGFloat = 0.2 // Zoom increment per button press
+    
     // MARK: - Init
     override init() {
         super.init()
         setupSession()
     }
+    
+
     
     // MARK: - Setup
     private func setupSession() {
@@ -101,10 +108,40 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
         }
     }
     
-    func manualZoom(factor: CGFloat) {
-        // Handle manual override intent if needed, or just set zoom directly
-        // For now, let's just let AutoZoom handle it or verify parity.
-        // If we want manual override, we'd add it to AutoZoomManager state.
+    func toggleZoomMode() {
+        isManualZoomMode.toggle()
+        if isManualZoomMode {
+            // Switching to manual: capture current auto-zoom level
+            manualZoomFactor = currentZoom
+        }
+    }
+    
+    func zoomIn() {
+        guard let device = videoDeviceInput?.device else { return }
+        isManualZoomMode = true
+        
+        manualZoomFactor += zoomStep
+        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 10.0) // Cap at 10x
+        manualZoomFactor = min(manualZoomFactor, maxZoom)
+        
+        applyZoom(manualZoomFactor)
+        
+        DispatchQueue.main.async {
+            self.currentZoom = self.manualZoomFactor
+        }
+    }
+    
+    func zoomOut() {
+        isManualZoomMode = true
+        
+        manualZoomFactor -= zoomStep
+        manualZoomFactor = max(1.0, manualZoomFactor) // Min 1x
+        
+        applyZoom(manualZoomFactor)
+        
+        DispatchQueue.main.async {
+            self.currentZoom = self.manualZoomFactor
+        }
     }
     
     // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate (Analysis Loop)
@@ -142,6 +179,17 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
             
             let detected = rect!
             let dt = 1.0 / 60.0 // Approximate
+            
+            // Skip auto-zoom if in manual mode
+            if self.isManualZoomMode {
+                // Update UI but don't change zoom
+                DispatchQueue.main.async {
+                    self.detectedRect = detected
+                    self.skierHeight = detected.height
+                    self.debugLabel = "Label: Person (Manual Zoom)"
+                }
+                return
+            }
             
             let newCrop = self.autoZoomManager.update(skierRect: detected, dt: dt)
             

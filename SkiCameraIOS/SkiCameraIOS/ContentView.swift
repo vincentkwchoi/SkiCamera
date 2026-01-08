@@ -45,6 +45,10 @@ struct ContentView: View {
                         .foregroundColor(.white)
                     Text("Zoom: \(String(format: "%.2f", camera.currentZoom))x")
                         .foregroundColor(.yellow)
+                    Text("Mode: \(camera.isManualZoomMode ? "MANUAL" : "AUTO")")
+                        .foregroundColor(camera.isManualZoomMode ? .orange : .cyan)
+                    Text(camera.buttonStatus)
+                        .foregroundColor(.cyan)
                 }
                 .font(.system(size: 16, weight: .bold, design: .monospaced))
                 .padding()
@@ -76,8 +80,16 @@ struct ContentView: View {
                 .padding(.bottom, 40)
             }
         }
+        .onPressCapture {
+            // Primary action (Volume Down)
+            camera.buttonStatus = "Volume DOWN pressed"
+            camera.zoomOut()
+        } secondaryAction: {
+            // Secondary action (Volume Up)
+            camera.buttonStatus = "Volume UP pressed"
+            camera.zoomIn()
+        }
         .onAppear {
-            setupVolumeListener()
             checkPermissions()
         }
     }
@@ -94,21 +106,6 @@ struct ContentView: View {
             }
         default:
             print("Camera permission denied")
-        }
-    }
-    
-    func setupVolumeListener() {
-        do {
-            try audioSession.setActive(true)
-            volumeObserver = audioSession.observe(\.outputVolume) { (session, value) in
-                // Volume Changed -> Trigger Manual Zoom Intent
-                // camera.manualZoom(...)
-                // For MVP, just print or minor nudge?
-                // AutoZoom is primary. Let's just log.
-                print("Volume changed: \(session.outputVolume)")
-            }
-        } catch {
-            print("Audio session failed")
         }
     }
 }

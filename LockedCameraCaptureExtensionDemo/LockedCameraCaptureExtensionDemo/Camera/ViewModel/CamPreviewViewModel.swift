@@ -11,6 +11,12 @@ import MetalLib
 class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     @Published private(set) var previewImage: CIImage? = nil
     @Published private(set) var renderer = MetalRenderer()
+    @Published var detectedRect: Rect? = nil
+    @Published var debugLabel: String = "Initializing..."
+    @Published var skierHeight: Double = 0.0
+    @Published var currentZoom: CGFloat = 1.0
+    @Published var buttonStatus: String = "No button pressed"
+    @Published var isManualZoomMode: Bool = false
 
     private(set) var previewQueue = DispatchQueue(label: "preview_queue")
     
@@ -18,6 +24,12 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     var videoDevice: AVCaptureDevice?
     private let analyzer = SkierAnalyzer()
     private let autoZoomManager = AutoZoomManager()
+    
+    // Manual Zoom
+    private var manualZoomFactor: CGFloat = 1.0
+    private let zoomStep: CGFloat = 0.2
+    
+
     
     func initializeRenderer() {
         renderer.initializeCIContext(colorSpace: nil, name: "preview")
@@ -48,19 +60,61 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             guard let self = self else { return }
             
             // Logic Loop
-            // If rect is nil, we treat it as no detection.
-            // But AutoZoomManager.update expects a Rect. 
-            // If nil, we can skip or pass a dummy? 
-            // Ideally we should handle 'lost subject' to decay or hold.
-            // For now, if nil, we return.
-            guard let detected = rect else { return }
+            guard let detected = rect else {
+                DispatchQueue.main.async {
+                    self.detectedRect = nil
+                    self.debugLabel = "Label: None"
+                }
+                return
+            }
+            
+            // Skip auto-zoom if in manual mode
+            if self.isManualZoomMode {
+                DispatchQueue.main.async {
+                    self.detectedRect = detected
+                    self.skierHeight = detected.height
+                    self.debugLabel = "Label: Person (Manual)"
+                    // self.currentZoom is updated by manual zoom methods
+                }
+                return
+            }
             
             let dt = 1.0 / 60.0 // Approximate 60fps
             let newCrop = self.autoZoomManager.update(skierRect: detected, dt: dt)
             
             let targetZoom = 1.0 / max(0.01, newCrop.width)
             self.applyZoom(targetZoom)
+            
+            // Update UI
+            DispatchQueue.main.async {
+                self.detectedRect = detected
+                self.skierHeight = detected.height
+                self.debugLabel = "Label: Person"
+                self.currentZoom = targetZoom
+            }
         }
+    }
+    
+    func zoomIn() {
+        guard let device = videoDevice else { return }
+        isManualZoomMode = true
+        
+        manualZoomFactor += zoomStep
+        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 10.0) // Cap at 10x
+        manualZoomFactor = min(manualZoomFactor, maxZoom)
+        
+        applyZoom(manualZoomFactor)
+        currentZoom = manualZoomFactor
+    }
+    
+    func zoomOut() {
+        isManualZoomMode = true
+        
+        manualZoomFactor -= zoomStep
+        manualZoomFactor = max(1.0, manualZoomFactor) // Min 1x
+        
+        applyZoom(manualZoomFactor)
+        currentZoom = manualZoomFactor
     }
     
     private func applyZoom(_ zoom: CGFloat) {

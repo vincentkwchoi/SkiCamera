@@ -42,6 +42,43 @@ struct ContentView: View {
                             Color.black.zIndex(1)
                         }
                     }
+                    .overlay {
+                        // Bounding Box Overlay
+                        GeometryReader { geo in
+                            if let rect = previewViewModel.detectedRect {
+                                Path { path in
+                                    let w = geo.size.width
+                                    let h = geo.size.height
+                                    
+                                    let left = rect.left * w
+                                    let top = rect.top * h
+                                    let width = rect.width * w
+                                    let height = rect.height * h
+                                    
+                                    path.addRect(CGRect(x: left, y: top, width: width, height: height))
+                                }
+                                .stroke(Color.green, lineWidth: 4)
+                            }
+                        }
+                    }
+                    .overlay(alignment: .top) {
+                        // Debug Info Overlay
+                        VStack(alignment: .leading) {
+                            Text(previewViewModel.debugLabel)
+                                .foregroundColor(.green)
+                            Text("H: \(String(format: "%.2f", previewViewModel.skierHeight)) / 0.15")
+                                .foregroundColor(.white)
+                            Text("Zoom: \(String(format: "%.2f", previewViewModel.currentZoom))x")
+                                .foregroundColor(.yellow)
+                            Text(previewViewModel.buttonStatus)
+                                .foregroundColor(.cyan)
+                        }
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .padding()
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(8)
+                        .padding(.top, 40)
+                    }
                 
                 VStack {
 #if CAPTURE_EXTENSION
@@ -81,9 +118,13 @@ struct ContentView: View {
         .animation(.default, value: viewModel.isSettingUpCamera)
         .animation(.default, value: captureProcessor.saveResultText)
         .onPressCapture {
-            Task {
-                await viewModel.capturePhoto()
-            }
+            // Primary action (Volume Down)
+            previewViewModel.buttonStatus = "Volume DOWN pressed"
+            previewViewModel.zoomOut()
+        } secondaryAction: {
+            // Secondary action (Volume Up)
+            previewViewModel.buttonStatus = "Volume UP pressed"
+            previewViewModel.zoomIn()
         }
         .task(id: scenePhase) {
             switch scenePhase {
