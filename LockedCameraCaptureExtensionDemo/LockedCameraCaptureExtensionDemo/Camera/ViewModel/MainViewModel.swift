@@ -22,7 +22,7 @@ class MainViewModel: ObservableObject {
     @Published var isSettingUpCamera = false
     @Published var showFlashScreen = false
     
-    private var session: AVCaptureSession? = nil
+    public var session: AVCaptureSession? = nil
     private var photoOutput: AVCapturePhotoOutput? = nil
     private var videoDevice: AVCaptureDevice? = nil
     
@@ -132,9 +132,7 @@ class MainViewModel: ObservableObject {
             session.addOutput(photoOutput)
             
             if let connection = videoOutput.connection(with: .video) {
-                if connection.isVideoRotationAngleSupported(90) {
-                    connection.videoRotationAngle = 90
-                }
+                // connection.imgRotationAngle = 90 // REMOVED to match Production behavior
                 if connection.isVideoMirroringSupported && position == .front {
                     connection.isVideoMirrored = true
                 }

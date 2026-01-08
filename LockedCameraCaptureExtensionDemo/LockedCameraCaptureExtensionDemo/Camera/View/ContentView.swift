@@ -35,32 +35,33 @@ struct ContentView: View {
             if viewModel.showNoPermissionHint {
                 Text("NoPermissionHint")
             } else {
-                // This demo uses MTKView to render CIImage, showing the possibility to not use AVCaptureVideoPreviewLayer.
-                MetalView(renderer: previewViewModel.renderer, enableSetNeedsDisplay: true)
-                    .overlay {
-                        if viewModel.showFlashScreen {
-                            Color.black.zIndex(1)
-                        }
-                    }
-                    .overlay {
-                        // Bounding Box Overlay
-                        GeometryReader { geo in
-                            if let rect = previewViewModel.detectedRect {
-                                Path { path in
-                                    let w = geo.size.width
-                                    let h = geo.size.height
-                                    
-                                    let left = rect.left * w
-                                    let top = rect.top * h
-                                    let width = rect.width * w
-                                    let height = rect.height * h
-                                    
-                                    path.addRect(CGRect(x: left, y: top, width: width, height: height))
+                ZStack {
+                    if let session = viewModel.session {
+                        CameraPreview(session: session)
+                            .ignoresSafeArea()
+                            .overlay {
+                                // Bounding Box Overlay
+                                GeometryReader { geo in
+                                    if let rect = previewViewModel.detectedRect {
+                                        Path { path in
+                                            let w = geo.size.width
+                                            let h = geo.size.height
+                                            
+                                            let left = rect.left * w
+                                            let top = rect.top * h
+                                            let width = rect.width * w
+                                            let height = rect.height * h
+                                            
+                                            path.addRect(CGRect(x: left, y: top, width: width, height: height))
+                                        }
+                                        .stroke(Color.green, lineWidth: 4)
+                                    }
                                 }
-                                .stroke(Color.green, lineWidth: 4)
                             }
-                        }
+                    } else {
+                        Text("Initializing Camera...")
                     }
+                }
                     .overlay(alignment: .top) {
                         // Debug Info Overlay
                         VStack(alignment: .leading) {
@@ -80,26 +81,7 @@ struct ContentView: View {
                         .padding(.top, 40)
                     }
                 
-                VStack {
-#if CAPTURE_EXTENSION
-                    OpenMainAppButton()
-                        .padding(.bottom)
-#endif
-                    Text("TapToCaptureHint")
-                        .foregroundStyle(.white)
-                        .font(.footnote)
-                        .padding()
-                    
-                    ZStack {
-                        SwitchCameraPositionButton(viewModel: viewModel)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        
-                        CaptureButton(viewModel: viewModel)
-                    }
-                }
-                .padding()
-                .disabled(viewModel.isSettingUpCamera)
-                .opacity(viewModel.isSettingUpCamera ? 0.5 : 1.0)
+                // Bottom controls removed
             }
         }
         .overlay {
@@ -140,39 +122,5 @@ struct ContentView: View {
         .task {
             previewViewModel.initializeRenderer()
         }
-    }
-}
-
-private struct SwitchCameraPositionButton: View {
-    @ObservedObject var viewModel: MainViewModel
-    
-    var body: some View {
-        Button {
-            Task {
-                await viewModel.toggleCameraPositionSwitch()
-            }
-        } label: {
-            Image(systemName: "arrow.triangle.2.circlepath.camera")
-                .padding()
-                .foregroundStyle(viewModel.cameraPosition == .back ? .white : .black)
-                .background {
-                    Circle().fill(Color.white.opacity(viewModel.cameraPosition == .back ? 0.1 : 1.0))
-                }
-        }.buttonStyle(.plain)
-    }
-}
-
-private struct CaptureButton: View {
-    @ObservedObject var viewModel: MainViewModel
-    
-    var body: some View {
-        Button {
-            Task {
-                await viewModel.capturePhoto()
-            }
-        } label: {
-            Circle().fill(Color.white)
-        }.buttonStyle(.plain)
-            .frame(width: 80, height: 80)
     }
 }

@@ -114,6 +114,7 @@
 				Camera/Logic/AutoZoomManager.swift,
 				Camera/Logic/SkierAnalyzer.swift,
 				Camera/OpenMainAppAction.swift,
+				Camera/View/CameraPreview.swift,
 				Camera/View/CaptureInteractionView.swift,
 				Camera/View/ContentView.swift,
 				Camera/ViewModel/CamPreviewViewModel.swift,
