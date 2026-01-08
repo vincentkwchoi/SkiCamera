@@ -97,6 +97,9 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     
     func zoomIn() {
         guard let device = videoDevice else { return }
+        if !isManualZoomMode {
+            manualZoomFactor = device.videoZoomFactor
+        }
         isManualZoomMode = true
         
         manualZoomFactor += zoomStep
@@ -108,6 +111,10 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     }
     
     func zoomOut() {
+        guard let device = videoDevice else { return }
+        if !isManualZoomMode {
+            manualZoomFactor = device.videoZoomFactor
+        }
         isManualZoomMode = true
         
         manualZoomFactor -= zoomStep
