@@ -99,15 +99,26 @@ struct ContentView: View {
         }
         .animation(.default, value: viewModel.isSettingUpCamera)
         .animation(.default, value: captureProcessor.saveResultText)
-        .onPressCapture {
-            // Primary action (Volume Down)
-            previewViewModel.buttonStatus = "Volume DOWN pressed"
-            previewViewModel.zoomOut()
-        } secondaryAction: {
-            // Secondary action (Volume Up)
-            previewViewModel.buttonStatus = "Volume UP pressed"
-            previewViewModel.zoomIn()
-        }
+        .onPressCapture(
+            onPress: {
+                // Primary action (Volume Down)
+                previewViewModel.buttonStatus = "Volume DOWN held"
+                previewViewModel.startZoomingOut()
+            },
+            onRelease: {
+                previewViewModel.buttonStatus = "Volume DOWN released"
+                previewViewModel.stopZooming()
+            },
+            secondaryPress: {
+                // Secondary action (Volume Up)
+                previewViewModel.buttonStatus = "Volume UP held"
+                previewViewModel.startZoomingIn()
+            },
+            secondaryRelease: {
+                previewViewModel.buttonStatus = "Volume UP released"
+                previewViewModel.stopZooming()
+            }
+        )
         .task(id: scenePhase) {
             switch scenePhase {
             case .background:

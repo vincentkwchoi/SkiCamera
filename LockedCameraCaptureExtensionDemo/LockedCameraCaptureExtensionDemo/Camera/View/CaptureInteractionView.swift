@@ -11,53 +11,40 @@ import AVKit
 
 extension View {
     @ViewBuilder
-    func onPressCapture(action: @escaping () -> Void) -> some View {
+    func onPressCapture(
+        onPress: @escaping () -> Void,
+        onRelease: @escaping () -> Void,
+        secondaryPress: @escaping () -> Void,
+        secondaryRelease: @escaping () -> Void
+    ) -> some View {
         if #available(iOS 18.0, *) {
             self.onCameraCaptureEvent { event in
                 switch event.phase {
-                case .ended:
-                    action()
+                case .began:
+                    onPress()
+                case .ended, .cancelled:
+                    onRelease()
                 default:
                     break
                 }
             } secondaryAction: { event in
                 switch event.phase {
-                case .ended:
-                    action()
+                case .began:
+                    secondaryPress()
+                case .ended, .cancelled:
+                    secondaryRelease()
                 default:
                     break
                 }
             }
         } else if #available(iOS 17.2, *) {
             self.background {
-                CaptureInteractionView(action: action)
-            }
-        } else {
-            self
-        }
-    }
-    
-    @ViewBuilder
-    func onPressCapture(action: @escaping () -> Void, secondaryAction: @escaping () -> Void) -> some View {
-        if #available(iOS 18.0, *) {
-            self.onCameraCaptureEvent { event in
-                switch event.phase {
-                case .ended:
-                    action()
-                default:
-                    break
-                }
-            } secondaryAction: { event in
-                switch event.phase {
-                case .ended:
-                    secondaryAction()
-                default:
-                    break
-                }
-            }
-        } else if #available(iOS 17.2, *) {
-            self.background {
-                CaptureInteractionView(action: action, secondaryAction: secondaryAction)
+                CaptureInteractionView(
+                    onPress: onPress,
+                    onRelease: onRelease,
+                    secondaryPress: secondaryPress,
+                    secondaryRelease: secondaryRelease
+                )
             }
         } else {
             self
@@ -67,24 +54,24 @@ extension View {
 
 @available(iOS 17.2, *)
 private struct CaptureInteractionView: UIViewRepresentable {
-    var action: () -> Void
-    var secondaryAction: (() -> Void)?
+    var onPress: () -> Void
+    var onRelease: () -> Void
+    var secondaryPress: () -> Void
+    var secondaryRelease: () -> Void
     
     func makeUIView(context: Context) -> some UIView {
         let uiView = UIView()
         let interaction = AVCaptureEventInteraction(primary: { event in
             if event.phase == .began {
-                // Primary action (Volume Up or Capture button)
-                action()
+                onPress()
+            } else if event.phase == .ended || event.phase == .cancelled {
+                onRelease()
             }
         }, secondary: { event in
             if event.phase == .began {
-                // Secondary action (Volume Down)
-                if let secondaryAction = secondaryAction {
-                    secondaryAction()
-                } else {
-                    action()
-                }
+                secondaryPress()
+            } else if event.phase == .ended || event.phase == .cancelled {
+                secondaryRelease()
             }
         })
         

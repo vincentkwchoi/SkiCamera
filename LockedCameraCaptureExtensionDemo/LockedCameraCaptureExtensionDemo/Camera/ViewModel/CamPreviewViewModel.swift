@@ -95,38 +95,109 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         }
     }
     
-    func zoomIn() {
+    private var uiUpdateTimer: Timer?
+    
+    // Continuous Zoom (Smooth Ramp)
+    func startZoomingIn() {
         guard let device = videoDevice else { return }
         if !isManualZoomMode {
             manualZoomFactor = device.videoZoomFactor
         }
         isManualZoomMode = true
         
-        manualZoomFactor += zoomStep
-        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 10.0) // Cap at 10x
-        manualZoomFactor = min(manualZoomFactor, maxZoom)
+        stopUIUpdates()
         
-        applyZoom(manualZoomFactor)
-        currentZoom = manualZoomFactor
+        do {
+            try device.lockForConfiguration()
+            let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 10.0)
+            device.ramp(toVideoZoomFactor: maxZoom, withRate: 2.0) // 2x per second
+            device.unlockForConfiguration()
+        } catch {
+            print("Failed to start ramp: \(error)")
+        }
+        
+        // Timer for UI updates only
+        uiUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.updateZoomUI()
+        }
+    }
+    
+    func startZoomingOut() {
+        guard let device = videoDevice else { return }
+        if !isManualZoomMode {
+            manualZoomFactor = device.videoZoomFactor
+        }
+        isManualZoomMode = true
+        
+        stopUIUpdates()
+        
+        do {
+            try device.lockForConfiguration()
+            device.ramp(toVideoZoomFactor: 1.0, withRate: 2.0)
+            device.unlockForConfiguration()
+        } catch {
+            print("Failed to start ramp: \(error)")
+        }
+        
+        // Timer for UI updates only
+        uiUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.updateZoomUI()
+        }
+    }
+    
+    func stopZooming() {
+        guard let device = videoDevice else { return }
+        
+        stopUIUpdates()
+        
+        do {
+            try device.lockForConfiguration()
+            device.cancelVideoZoomRamp()
+            manualZoomFactor = device.videoZoomFactor // Capture final value
+            device.unlockForConfiguration()
+            
+            // Final UI update
+            updateZoomUI()
+        } catch {
+            print("Failed to stop ramp: \(error)")
+        }
+    }
+    
+    private func stopUIUpdates() {
+        uiUpdateTimer?.invalidate()
+        uiUpdateTimer = nil
+    }
+    
+    private func updateZoomUI() {
+        guard let device = videoDevice else { return }
+        let current = device.videoZoomFactor
+        DispatchQueue.main.async {
+            self.currentZoom = current
+            
+            // Sync manual factor if we are ramping
+            self.manualZoomFactor = current
+        }
+    }
+
+    func zoomIn() {
+        // Fallback or single tap behavior (optional, or just ramp briefly)
+        // For now, let's just do a small ramp step
+        startZoomingIn()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.stopZooming()
+        }
     }
     
     func zoomOut() {
-        guard let device = videoDevice else { return }
-        if !isManualZoomMode {
-            manualZoomFactor = device.videoZoomFactor
+        startZoomingOut()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.stopZooming()
         }
-        isManualZoomMode = true
-        
-        manualZoomFactor -= zoomStep
-        manualZoomFactor = max(1.0, manualZoomFactor) // Min 1x
-        
-        applyZoom(manualZoomFactor)
-        currentZoom = manualZoomFactor
     }
     
     private func applyZoom(_ zoom: CGFloat) {
+        // Only used by AutoZoom now (instant)
         guard let device = videoDevice else { return }
-        
         do {
             try device.lockForConfiguration()
             let clamped = max(1.0, min(device.activeFormat.videoMaxZoomFactor, zoom))
