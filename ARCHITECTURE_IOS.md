@@ -17,7 +17,25 @@ The iOS implementation is built using **SwiftUI** and **AVFoundation**, designed
 | **SkierAnalyzer** | Wraps Vision/CoreML to detect skiers (YOLOv8) and return bounding boxes. |
 | **AutoZoomManager** | Shared logic (likely KMP or ported Swift) calculating ideal zoom targets. |
 
-## 2. Manual Zoom (Smooth Ramp)
+## 2. Lifecycle of a Capture Extension
+ 
+ The Locked Camera Capture Extension follows a strict lifecycle distinct from a standard iOS app. It is designed to launch quickly, capture content, and then transition the user either back to the lock screen or into the main app.
+ 
+ ![Lifecycle of a capture extension](/Users/vincentchoi/.gemini/antigravity/brain/a791323a-60a0-42b5-9829-d0a4c55c0f45/uploaded_image_1_1767948916077.png)
+ 
+ ### Key States:
+ *   **Control**: The user taps the Control Center widget or Lock Screen button.
+ *   **Launch**: The extension boots up. In our case, `LockedExtension.swift` initializes `LockedCameraCaptureView`.
+ *   **Capture**: The user records video.
+ *   **Dismissal**:
+     *   **Lock Screen**: If the user swipes up or presses the power button, the extension is dismissed, and the device returns to the lock screen.
+     *   **Transition to App**: If the user taps a button to "Open App", the extension hands off control to the main app (`SkiCameraIOSApp`).
+ 
+ > [!NOTE]
+ > For more details, refer to the WWDC session on Capture Controls.
+ > ![WWDC Session](/Users/vincentchoi/.gemini/antigravity/brain/a791323a-60a0-42b5-9829-d0a4c55c0f45/uploaded_image_0_1767948916077.png)
+ 
+ ## 3. Manual Zoom (Smooth Ramp)
 
 To provide a premium, camera-like feel, manual zooming is implemented using hardware-accelerated ramping rather than discrete steps.
 

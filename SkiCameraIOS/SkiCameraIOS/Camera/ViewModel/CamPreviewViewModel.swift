@@ -7,8 +7,11 @@
 import SwiftUI
 import AVFoundation
 import MetalLib
+import OSLog
 
 class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    private let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CamPreviewViewModel")
+    
     @Published private(set) var previewImage: CIImage? = nil
     @Published private(set) var renderer = MetalRenderer()
     @Published var detectedRect: Rect? = nil
@@ -115,8 +118,11 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     
     // Continuous Zoom (Smooth Ramp)
     func startZoomingIn() {
+        // logger.log(level: .default, "Start Zooming In") // Logging frequently might be noisy, but user asked for major events.
+        // Will keep it to start/stop of interaction logic.
         guard let device = videoDevice else { return }
         if !isManualZoomMode {
+            logger.log(level: .default, "Switching to Manual Zoom (Zoom In)")
             manualZoomFactor = device.videoZoomFactor
         }
         isManualZoomMode = true
@@ -129,7 +135,7 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             device.ramp(toVideoZoomFactor: maxZoom, withRate: 2.0) // 2x per second
             device.unlockForConfiguration()
         } catch {
-            print("Failed to start ramp: \(error)")
+            logger.log(level: .default, "Failed to start ramp: \(error.localizedDescription)")
         }
         
         // Timer for UI updates only
@@ -141,6 +147,7 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     func startZoomingOut() {
         guard let device = videoDevice else { return }
         if !isManualZoomMode {
+            logger.log(level: .default, "Switching to Manual Zoom (Zoom Out)")
             manualZoomFactor = device.videoZoomFactor
         }
         isManualZoomMode = true
@@ -151,8 +158,9 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             try device.lockForConfiguration()
             device.ramp(toVideoZoomFactor: 1.0, withRate: 2.0)
             device.unlockForConfiguration()
+            device.unlockForConfiguration()
         } catch {
-            print("Failed to start ramp: \(error)")
+             logger.log(level: .default, "Failed to start ramp: \(error.localizedDescription)")
         }
         
         // Timer for UI updates only
@@ -175,7 +183,7 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             // Final UI update
             updateZoomUI()
         } catch {
-            print("Failed to stop ramp: \(error)")
+            logger.log(level: .default, "Failed to stop ramp: \(error.localizedDescription)")
         }
     }
     
@@ -197,6 +205,7 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     
     // Resume Auto Zoom (Simultaneous Press)
     func resetToAutoZoom() {
+        logger.log(level: .default, "Resetting to Auto Zoom")
         guard let device = videoDevice else { return }
         
         // Stop any active manual ramp
@@ -237,7 +246,9 @@ class CamPreviewViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             device.videoZoomFactor = clamped
             device.unlockForConfiguration()
         } catch {
-            print("Zoom failed: \(error)")
+            // print("Zoom failed: \(error)") // Squelch frequent errors or use debug log
+            // logger.log(level: .default, "Zoom failed: \(error.localizedDescription)") 
+            // Logging every frame zoom error might clog logs. Keeping silent or single error logic preferred.
         }
     }
     

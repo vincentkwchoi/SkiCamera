@@ -9,8 +9,11 @@ import AVFoundation
 import Photos
 import LockedCameraCapture
 import Models
+import OSLog
 
 class MainViewModel: ObservableObject {
+    private let logger = Logger(subsystem: "com.vcnt.skicamera", category: "MainViewModel")
+    
     @Published var showNoPermissionHint: Bool = false
     @Published var cameraPosition: CameraPosition = .back {
         didSet {
@@ -37,7 +40,9 @@ class MainViewModel: ObservableObject {
 
     @MainActor
     func setup() async {
+        logger.log(level: .default, "Setup requested")
         guard await requestForPermission() else {
+            logger.log(level: .default, "Permissions denied")
             showNoPermissionHint = true
             return
         }
@@ -49,6 +54,7 @@ class MainViewModel: ObservableObject {
     func startRecording() {
         guard let movieOutput = movieOutput else { return }
         if !movieOutput.isRecording {
+            logger.log(level: .default, "Start Recording Requested")
             // We use a temp URL or delegate method. 
             // AVCaptureMovieFileOutput.startRecording(to: recordingDelegate:)
             // We need a file URL.
@@ -61,6 +67,7 @@ class MainViewModel: ObservableObject {
     func stopRecording() {
         guard let movieOutput = movieOutput else { return }
         if movieOutput.isRecording {
+            logger.log(level: .default, "Stop Recording Requested")
             movieOutput.stopRecording()
         }
     }
@@ -68,7 +75,7 @@ class MainViewModel: ObservableObject {
     @MainActor
     func capturePhoto() async {
         guard let photoOutput = photoOutput else {
-            print("can't find photo output")
+            logger.log(level: .default, "can't find photo output")
             return
         }
         
@@ -82,6 +89,7 @@ class MainViewModel: ObservableObject {
     
     @MainActor
     func toggleCameraPositionSwitch() async {
+        logger.log(level: .default, "Toggling Camera Position")
         self.cameraPosition = self.cameraPosition == .back ? .front : .back
         await reconfigureCamera()
     }
@@ -98,6 +106,7 @@ class MainViewModel: ObservableObject {
             return
         }
         
+        logger.log(level: .default, "Stopping Camera Session")
         cameraSession.stopRunning()
         self.session = nil
     }
@@ -105,7 +114,7 @@ class MainViewModel: ObservableObject {
     @MainActor
     private func setupInternal() async {
         if isSettingUpCamera {
-            print("isSettingUpCamera, skip")
+            logger.log(level: .default, "isSettingUpCamera, skip")
             return
         }
         
@@ -115,7 +124,7 @@ class MainViewModel: ObservableObject {
             isSettingUpCamera = false
         }
         
-        print("start setting up")
+        logger.log(level: .default, "start setting up camera session")
         
         guard let (cameraSession, photoOutput, movieOutput, device) = await setupCameraSession(position: cameraPosition) else {
             return
@@ -129,6 +138,7 @@ class MainViewModel: ObservableObject {
     }
     
     private nonisolated func setupCameraSession(position: CameraPosition) async -> (AVCaptureSession, AVCapturePhotoOutput, AVCaptureMovieFileOutput, AVCaptureDevice)? {
+        let logger = Logger(subsystem: "com.vcnt.skicamera", category: "MainViewModel")
         do {
             let session = AVCaptureSession()
             session.beginConfiguration()
@@ -139,7 +149,7 @@ class MainViewModel: ObservableObject {
                 for: .video,
                 position: position.avFoundationPosition
             ) else {
-                print("can't find AVCaptureDevice")
+                logger.log(level: .default, "can't find AVCaptureDevice")
                 return nil
             }
             

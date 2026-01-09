@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MetalLib
+import OSLog
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -14,6 +15,7 @@ struct ContentView: View {
     @StateObject private var previewViewModel: CamPreviewViewModel
     @StateObject private var viewModel: MainViewModel
     @StateObject private var captureProcessor: CaptureProcessor
+    @EnvironmentObject var sessionImporter: SessionImporter
     
     /// Construct ``ContentView`` given the instance of ``AppStorageConfigProvider``, which provides the information
     /// about the current environment.
@@ -33,6 +35,8 @@ struct ContentView: View {
     // State for Simultaneous Press Detection
     @State private var isVolDownPressed = false
     @State private var isVolUpPressed = false
+    @State private var lastVolDownPressTime: Date? = nil
+    @State private var lastVolUpPressTime: Date? = nil
     
     // Auto-Recording State
     @State private var countdown: Int = 5
@@ -94,13 +98,14 @@ struct ContentView: View {
                         VStack(alignment: .leading) {
                             Text(previewViewModel.isManualZoomMode ? "MANUAL ZOOM" : "AUTO ZOOM")
                                 .foregroundColor(previewViewModel.isManualZoomMode ? .orange : .green)
+                            Text(captureProcessor.configProvider.isLockedCapture ? "LOCKED" : "UNLOCKED")
+                                .foregroundColor(captureProcessor.configProvider.isLockedCapture ? .red : .green)
+                            Text("Files: \(sessionImporter.detectedFiles.count)")
+                                .foregroundColor(.white)
                             Text("Skier Height: \(String(format: "%.2f", previewViewModel.skierHeight))")
                                 .foregroundColor(.white)
                             Text("Zoom: \(String(format: "%.2f", previewViewModel.currentZoom))x")
                                 .foregroundColor(.yellow)
-                            Text(previewViewModel.debugLabel)
-                                .foregroundColor(.gray)
-                                .font(.system(size: 14))
                         }
                         .font(.system(size: 16, weight: .bold, design: .monospaced))
                         .padding()
@@ -125,11 +130,72 @@ struct ContentView: View {
                                 .padding(.top, 40)
                         }
                     }
+                    .overlay(alignment: .bottom) {
+                        if isRecording {
+                            Button(action: {
+                                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                                logger.log(level: .default, "Stop Button Pressed")
+                                viewModel.stopRecording()
+                                isRecording = false
+                            }) {
+                                Image(systemName: "stop.circle.fill")
+                                    .resizable()
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.red, .white)
+                                    .frame(width: 80, height: 80)
+                                    .shadow(radius: 4)
+                                    .padding(.bottom, 50)
+                            }
+                        }
+                    }
                 
                 // Bottom controls removed
             }
         }
         .overlay {
+            // Import Button Overlay (Top Center)
+            if !sessionImporter.detectedFiles.isEmpty {
+                VStack {
+                    Text("Found \(sessionImporter.detectedFiles.count) Ski Videos")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(8)
+                    
+                    Button(action: {
+                        Task {
+                            await sessionImporter.performImport()
+                        }
+                    }) {
+                        if sessionImporter.isImporting {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .tint(.black)
+                                .padding()
+                                .background(Color.white)
+                                .clipShape(Circle())
+                        } else {
+                            HStack {
+                                Image(systemName: "square.and.arrow.down")
+                                .foregroundColor(.black)
+                                Text("Click to Import")
+                                .foregroundColor(.black)
+                            }
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color.yellow) // Ski Camera Yellow
+                            .cornerRadius(20)
+                            .shadow(radius: 4)
+                        }
+                    }
+                }
+                .padding(.top, 100)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+
             if !captureProcessor.saveResultText.isEmpty {
                 Text(captureProcessor.saveResultText)
                     .padding(12)
@@ -146,6 +212,23 @@ struct ContentView: View {
         .animation(.default, value: captureProcessor.saveResultText)
         .onPressCapture(
             onPress: {
+                // Double Click Detection (Volume Down)
+                let now = Date()
+                if let last = lastVolDownPressTime, now.timeIntervalSince(last) < 0.4 {
+                    let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                    logger.log(level: .default, "Volume DOWN Double Click Detected")
+                    if isRecording {
+                        logger.log(level: .default, "Stopping Recording via Double Click")
+                        viewModel.stopRecording()
+                        isRecording = false
+                    }
+                    lastVolDownPressTime = nil // Reset to avoid triple click issues
+                    return
+                }
+                lastVolDownPressTime = now
+                
+                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                logger.log(level: .default, "Volume DOWN pressed (Primary)")
                 // Primary action (Volume Down / Shutter)
                 isVolDownPressed = true
                 if isVolUpPressed {
@@ -156,11 +239,30 @@ struct ContentView: View {
                 }
             },
             onRelease: {
+                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                logger.log(level: .default, "Volume DOWN released")
                 isVolDownPressed = false
                 previewViewModel.buttonStatus = "Volume DOWN released"
                 previewViewModel.stopZooming()
             },
             secondaryPress: {
+                // Double Click Detection (Volume Up)
+                let now = Date()
+                if let last = lastVolUpPressTime, now.timeIntervalSince(last) < 0.4 {
+                    let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                    logger.log(level: .default, "Volume UP Double Click Detected")
+                    if isRecording {
+                        logger.log(level: .default, "Stopping Recording via Double Click")
+                        viewModel.stopRecording()
+                        isRecording = false
+                    }
+                    lastVolUpPressTime = nil // Reset
+                    return
+                }
+                lastVolUpPressTime = now
+
+                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                logger.log(level: .default, "Volume UP pressed (Secondary)")
                 // Secondary action (Volume Up)
                 isVolUpPressed = true
                 if isVolDownPressed {
@@ -171,6 +273,8 @@ struct ContentView: View {
                 }
             },
             secondaryRelease: {
+                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                logger.log(level: .default, "Volume UP released")
                 isVolUpPressed = false
                 previewViewModel.buttonStatus = "Volume UP released"
                 previewViewModel.stopZooming()
@@ -178,15 +282,19 @@ struct ContentView: View {
         )
         .task(id: scenePhase) {
             switch scenePhase {
-            case .background:
-                // Stop Recording on Background
-                viewModel.stopRecording()
-                await viewModel.stopCamera()
-                isRecording = false
-                countdown = 5 // Reset countdown for next launch
             case .active:
+                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                logger.log(level: .default, "Scene Phase: Active")
                 await viewModel.updateFromAppContext()
                 await viewModel.setup()
+                
+                // Scan for new sessions whenever app becomes active (Main App Only)
+                if !captureProcessor.configProvider.isLockedCapture {
+                     if #available(iOS 18.0, *) {
+                         logger.log(level: .default, "App active, scanning for sessions...")
+                         await sessionImporter.scanForSessions()
+                     }
+                 }
                 
                 // Start Countdown Timer
                  if !isRecording {
@@ -201,12 +309,63 @@ struct ContentView: View {
                      }
                  }
                 
-            default:
+            case .background, .inactive:
+                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                logger.log(level: .default, "Scene Phase: \(scenePhase == .background ? "Background" : "Inactive")")
+                // Stop Recording on Background or Inactive (e.g. screen lock)
+                viewModel.stopRecording()
+                // Only stop camera session on background to save power, but inactive might need it kept alive briefly?
+                // For LockedCapture, we want to ensure recording stops and saves.
+                if isRecording {
+                    logger.log(level: .default, "Stopping recording due to phase change")
+                    isRecording = false
+                }
+                
+                if scenePhase == .background {
+                     await viewModel.stopCamera()
+                     countdown = 5 // Reset countdown for next launch
+                }
+            
+            @unknown default:
                 break
+            }
+        }
+        .onDisappear {
+            let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+            logger.log(level: .default, "ContentView Disappeared")
+            // Ensure recording is stopped when view disappears (e.g. extension killed/dismissed)
+            if isRecording {
+                logger.log(level: .default, "Stopping recording due to onDisappear")
+                viewModel.stopRecording()
+                isRecording = false
+            }
+            Task {
+                await viewModel.stopCamera()
             }
         }
         .task {
             previewViewModel.initializeRenderer()
+            
+            // Wire up CaptureProcessor to SessionImporter for auto-refresh (Main App Only)
+            captureProcessor.onSaveSuccess = {
+                if !captureProcessor.configProvider.isLockedCapture {
+                    Task {
+                        await sessionImporter.scanForSessions()
+                    }
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LockedCameraStopRecording"))) { _ in
+            let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+            logger.log(level: .default, "Received LockedCameraStopRecording notification")
+            if isRecording {
+                logger.log(level: .default, "Stopping recording due to Notification")
+                viewModel.stopRecording()
+                isRecording = false
+            }
+            Task {
+                await viewModel.stopCamera()
+            }
         }
     }
 }

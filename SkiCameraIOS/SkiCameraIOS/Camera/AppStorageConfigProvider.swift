@@ -9,11 +9,13 @@ import LockedCameraCapture
 
 struct AppStorageConfigProvider : Sendable {
     let rootURL: URL?
+    let isLockedCapture: Bool
 }
 
 extension AppStorageConfigProvider {
     static let standard = AppStorageConfigProvider(
-        rootURL: getStandardRootURL()
+        rootURL: getStandardRootURL(),
+        isLockedCapture: false
     )
 }
 
@@ -21,6 +23,7 @@ extension AppStorageConfigProvider {
 extension AppStorageConfigProvider {
     init(_ session: LockedCameraCaptureSession) {
         self.rootURL = session.sessionContentURL
+        self.isLockedCapture = true
     }
 }
 
