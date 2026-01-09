@@ -13,7 +13,7 @@ import com.vcnt.skicamera.shared.Rect as SharedRect
 
 class SkierAnalyzer(
     private val autoZoomManager: AutoZoomManager,
-    private val onZoomResult: (SharedRect, Double, String, String, SharedRect?) -> Unit // crop, height, label, meta, detection
+    private val onZoomResult: (SharedRect, Double, String, String, SharedRect?, Boolean) -> Unit // crop, height, label, meta, detection, isZooming
 ) : ImageAnalysis.Analyzer {
 
     init {
@@ -72,7 +72,7 @@ class SkierAnalyzer(
                     val cropRect = autoZoomManager.update(normalizedRect, dt)
                     
                     val metadata = "Rot: $rotation / Res: ${w.toInt()}x${h.toInt()}"
-                    onZoomResult(cropRect, normalizedRect.height, label, metadata, normalizedRect)
+                    onZoomResult(cropRect, normalizedRect.height, label, metadata, normalizedRect, autoZoomManager.isZooming)
                 }
                 .addOnFailureListener { e ->
                     Log.e("SkiCamera", "Detection failed", e)

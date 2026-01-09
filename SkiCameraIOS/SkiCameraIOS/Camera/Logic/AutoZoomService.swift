@@ -23,7 +23,7 @@ class AutoZoomService: ObservableObject {
     
     // Throttling
     private var frameCounter: Int = 0
-    private let frameSkipInterval: Int = 3
+    private let frameSkipInterval: Int = 1
     
     private let processingQueue = DispatchQueue(label: "auto_zoom_processing")
     
@@ -69,7 +69,9 @@ class AutoZoomService: ObservableObject {
                     self.allDetectedRects = allRects
                     if let p = primaryRect {
                         self.skierHeight = p.height
-                        self.debugLabel = "Label: Person"
+                        
+                        let zoomState = self.autoZoomManager.isZooming ? "[ZOOMING]" : "[STABLE]"
+                        self.debugLabel = "Label: Person \(zoomState)"
                     } else {
                         self.debugLabel = "Label: None"
                     }
@@ -112,6 +114,10 @@ class AutoZoomService: ObservableObject {
              let clamped = max(1.0, min(device.activeFormat.videoMaxZoomFactor, zoom))
              device.videoZoomFactor = clamped
              device.unlockForConfiguration()
+             
+             DispatchQueue.main.async {
+                 self.currentZoom = clamped
+             }
          } catch {
              // Squelch errors to avoid log spam
          }

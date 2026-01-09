@@ -105,7 +105,7 @@ A consolidated list of all significant code events and their execution chains.
       <td><code>AVCaptureVideoDataOutput</code></td>
       <td><b>Frame Arrived</b></td>
       <td><code>AVCaptureVideoDataOutput</code></td>
-      <td><code>FrameDistributor.captureOutput</code> &rarr; <b>Update Preview</b> (Main Thread) &rarr; <b>Throttle (1/3)</b> &rarr; <code>AutoZoomService</code> (Async)</td>
+      <td><code>FrameDistributor.captureOutput</code> &rarr; <b>Update Preview</b> (Main Thread) &rarr; <b>Throttle (1/1)</b> &rarr; <code>AutoZoomService</code> (Async)</td>
       <td><a href="#52-auto-zoom-analysis">Link</a></td>
     </tr>
     <tr>
@@ -263,7 +263,7 @@ System events allow the app to react to hardware changes and lifecycle transitio
 1.  **Distribution**: `FrameDistributor.captureOutput` receives `CMSampleBuffer`.
 2.  **Fast Path**: `Buffer` sent to `CamPreviewViewModel` to update UI Preview (Immediate, Main Thread).
 3.  **Slow Path**: `Buffer` sent to `AutoZoomService.processFrame` (Async Queue).
-4.  **Throttle**: `AutoZoomService` checks if `frameCounter % 3 == 0`. Skips 66% of frames.
+4.  **Throttle**: `AutoZoomService` checks if `frameCounter % 1 == 0`. Process **Every Frame**.
 5.  **Detection**: `SkierAnalyzer` (YOLOv8) detects person.
 6.  **Zoom**: `AutoZoomManager` calculates new zoom level.
 7.  **Apply**: Service sets `device.videoZoomFactor`.

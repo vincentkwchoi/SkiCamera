@@ -77,6 +77,11 @@ class AutoZoomManager {
     var targetSubjectHeightRatio: Double = 0.15
     var maxZoomSpeed: Double = 5.0
     
+    // Hysteresis Thresholds
+    var zoomTriggerThreshold: Double = 0.10 // 10% error required to START zooming
+    var zoomStopThreshold: Double = 0.05 // 5% error required to STOP zooming
+    private(set) var isZooming: Bool = false
+    
     func update(skierRect: Rect, dt: Double) -> Rect {
         if dt <= 0 {
             return getRectFromCenterAndScale(cx: currentCropCenterX, cy: currentCropCenterY, scale: currentZoomScale)
@@ -97,9 +102,27 @@ class AutoZoomManager {
         // Gain
         let kZoom = 10.0
         
-        // Error > 0 (Too small) -> Decrease Scale (Zoom In)
-        let scaleChange = -zoomError * kZoom * dt
-        currentZoomScale += scaleChange
+        // Hysteresis Logic
+        let errorAbs = abs(zoomError)
+        
+        if !isZooming {
+            // Not currently zooming. Check if we should START.
+            if errorAbs > zoomTriggerThreshold {
+                isZooming = true
+            }
+        } else {
+            // Currently zooming. Check if we should STOP.
+            if errorAbs < zoomStopThreshold {
+                isZooming = false
+            }
+        }
+        
+        // Only apply zoom if active
+        if isZooming {
+            // Error > 0 (Too small) -> Decrease Scale (Zoom In)
+            let scaleChange = -zoomError * kZoom * dt
+            currentZoomScale += scaleChange
+        }
         
         // Clamp (0.05 = 20x Zoom, 1.0 = 1x Zoom)
         currentZoomScale = max(0.05, min(1.0, currentZoomScale))

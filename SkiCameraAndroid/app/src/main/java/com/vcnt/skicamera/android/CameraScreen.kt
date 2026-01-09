@@ -84,12 +84,13 @@ fun CameraScreen(volumeEvent: VolumeEvent?) {
                         .build()
                         .also {
                             // Using main executor for troubleshooting frame flow
-                            it.setAnalyzer(ContextCompat.getMainExecutor(ctx), SkierAnalyzer(autoZoomManager) { cropRect, skierHeight, label, metadata, detection ->
+                            it.setAnalyzer(ContextCompat.getMainExecutor(ctx), SkierAnalyzer(autoZoomManager) { cropRect, skierHeight, label, metadata, detection, isZooming ->
                                 val zoomX = 1.0 / cropRect.width
                                 val targetLinearZoom = (zoomX - 1.0) / 4.0 
                                 val finalZoom = targetLinearZoom.toFloat().coerceIn(0f, 1f)
                                 
-                                debugText = "$metadata\nLabel: $label\nH: ${"%.2f".format(skierHeight)} - Zoom: ${"%.2f".format(zoomX)}x"
+                                val status = if (isZooming) "[ZOOMING]" else "[STABLE]"
+                                debugText = "$metadata\nLabel: $label\nH: ${"%.2f".format(skierHeight)} - Zoom: ${"%.2f".format(zoomX)}x $status"
                                 detectedRect = detection
                                 
                                 cameraControl?.setLinearZoom(finalZoom)

@@ -160,15 +160,15 @@ To verify the smooth mechanics without hitting the slopes, we will build a **Rea
 (As of Jan 2026 Implementation)
 
 ### A. Performance Throttling
-*   **Frame Skip**: `1 in 3`
-    *   **Logic**: `frameCounter % 3 == 0`
-    *   **Effect**: Reduces Neural Engine load. Effective Analysis Rate is ~20 FPS (at 60 FPS Camera input).
+*   **Frame Skip**: `1 in 1` (No Skip)
+    *   **Logic**: `frameCounter % 1 == 0`
+    *   **Effect**: Max smoothness. Analysis Rate matches Camera FPS (e.g., 60 FPS).
 
 ### B. Zoom Physics (`AutoZoomManager`)
 *   **Delta Time (`dt`) Calculation**:
     *   **Formula**: `dt = (1.0 / CameraFPS) * FrameSkipInterval`
     *   **Logic**: Since we skip frames, we must tell the PID controller that *more time has passed* between updates.
-    *   **Example**: At 60 FPS with 3-frame skip, `dt` = 0.05s (instead of 0.016s). This maintains correct zoom velocity.
+    *   **Example**: At 60 FPS with 1-frame skip, `dt` = 0.0167s (Standard). This maintains correct zoom velocity.
 
 *   **Target Subject Height**: `0.15` (15% of frame height)
     *   **Effect**: The algorithm aims to keep the skier occupying 15% of the screen vertical height.
@@ -182,4 +182,12 @@ To verify the smooth mechanics without hitting the slopes, we will build a **Rea
 *   **Min Zoom**: `1x` (Scale 1.0)
 *   **Manual Ramp Rate**: `2.0`
     *   **Effect**: When holding Volume Buttons, the zoom factor changes by 2.0x per second.
+
+### D. Hysteresis (Deadband)
+*   **Trigger Threshold**: `0.10` (10% Error)
+    *   **Logic**: Zoom **STARTS** only if `abs(target - current) > 0.10`.
+    *   **Purpose**: Prevents the lens from hunting when the subject size is changing slightly (e.g., breathing, minor posture changes).
+*   **Stop Threshold**: `0.05` (5% Error)
+    *   **Logic**: Zoom **STOPS** only if `abs(target - current) < 0.05`.
+    *   **Purpose**: Ensures the zoom settles completely once active, preventing "chatter" (rapid start/stop).
 

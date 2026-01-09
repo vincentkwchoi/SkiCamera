@@ -29,6 +29,13 @@ class AutoZoomManager {
     var maxZoomSpeed: Double = 5.0 // Units per second
     var maxPanSpeed: Double = 5.0 // Units per second
 
+    // Hysteresis Thresholds
+    // Hysteresis Thresholds
+    var zoomTriggerThreshold: Double = 0.10 // 10% error required to START zooming
+    var zoomStopThreshold: Double = 0.05 // 5% error required to STOP zooming
+    var isZooming: Boolean = false
+        private set
+
     /**
      * Main Update Loop
      * @param skierRect Normalized bounding box of skier (0.0-1.0 coords).
@@ -58,9 +65,27 @@ class AutoZoomManager {
         // Let's increase this for more visible reaction during debugging
         val kZoom = 10.0 
 
-        // If Error > 0 (Too small), we want Scale to DECREASE (zoom in).
-        val scaleChange = -zoomError * kZoom * dt
-        currentZoomScale += scaleChange
+        // Hysteresis Logic
+        val errorAbs = if (zoomError < 0) -zoomError else zoomError
+        
+        if (!isZooming) {
+            // Not currently zooming. Check if we should START.
+            if (errorAbs > zoomTriggerThreshold) {
+                isZooming = true
+            }
+        } else {
+            // Currently zooming. Check if we should STOP.
+            if (errorAbs < zoomStopThreshold) {
+                isZooming = false
+            }
+        }
+
+        // Only apply zoom if active
+        if (isZooming) {
+            // If Error > 0 (Too small), we want Scale to DECREASE (zoom in).
+            val scaleChange = -zoomError * kZoom * dt
+            currentZoomScale += scaleChange
+        }
 
         // Log for debugging
         println("ZoomDebug: err=$zoomError, h_crop=$currentSkierHeightInCrop, scale=$currentZoomScale")
