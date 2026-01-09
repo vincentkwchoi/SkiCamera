@@ -74,3 +74,88 @@ graph TD
         User[Volume Buttons] -->|Ramp| Lens
     end
 ```
+
+## 4. Data Storage Strategy
+
+The application uses `PHAssetCreationRequest` to save videos directly to the **Photo Library**, even when launched from the lock screen.
+
+| Launch State | Access Level | Storage Destination |
+| :--- | :--- | :--- |
+| **Unlocked (Main App)** | Full | **Photo Library** (`PHAssetCreationRequest`) |
+| **Locked (Extension)** | Restricted | **Session Container** (`session.sessionContentURL`) |
+
+### Unlocked Capture Logic
+When the app is launched normally (unlocked), it has full access to system resources.
+1.  **Config**: `AppStorageConfigProvider` initializes with `isLockedCapture = false`.
+2.  **Save**: `CaptureProcessor` uses `PHAssetCreationRequest` to save the video directly to the user's **Photo Library**.
+3.  **No Import Needed**: The file is immediately available in the Photos app.
+
+### Locked Capture Logic
+When the device is locked, the `LockedCameraCaptureExtension` runs in a restricted sandbox that **cannot access the Photo Library**. To persist videos:
+
+1.  **Detection**: `AppStorageConfigProvider` detects the locked state (`isLockedCapture = true`) when initialized with a `LockedCameraCaptureSession`.
+2.  **Redirect**: `CaptureProcessor` checks this flag.
+3.  **Save**: Instead of calling `PHPhotoLibrary`, it performs a file copy to `session.sessionContentURL`.
+    *   Files in this directory are temporarily persisted by the system in a shared container.
+4.  **Logging**: Detailed debug logs are printed to verify the save operation:
+    ```
+    Locked Capture: Successfully saved video.
+      - Source: file:///private/var/.../tmp/video.mov
+      - Destination: file:///private/var/.../LockedCameraCapture/session_id/video.mov
+      - Size: 1845293 bytes
+    ```
+
+### Import on Unlock (Main App)
+Since locked videos are not immediately visible in Photos, the **Main App** is responsible for importing them when the user unlocks the device.
+
+1.  **Launch**: `SkiCameraIOSApp` (DemoApp.swift) initializes `SessionImporter`.
+2.  **Scan**: It scans `LockedCameraCaptureManager.shared.sessionContentURLs` for any existing sessions.
+3.  **Import**: It iterates through found directories, saves `.mov` files to the **Photo Library**, and deletes the originals to free up space.
+4. log debug message "Found session at URL: ..."
+
+This ensures a seamless experience: Users record quickly from the lock screen, and the videos appear in their Photos library as soon as they unlock the app.
+## 5. User Interface & Debug Overlay
+
+To assist with testing and verification in the field, a dense debug overlay is rendered on top of the camera preview.
+
+#### 1. Heads-Up Display (HUD)
+**availability**: Locked & Unlocked
+Located at the top-left of the screen, providing real-time telemetry:
+*   **Zoom Mode**: `AUTO ZOOM` (Green) or `MANUAL ZOOM` (Orange).
+*   **Locked State**: `LOCKED` (Red) or `UNLOCKED` (Green).
+*   **Storage**: Number of files in temp storage (e.g., `Files: 3`).
+*   **Skier Height**: Estimated normalized height of the tracked skier (0.0 - 1.0).
+*   **Zoom Factor**: True hardware video zoom factor (e.g., `2.50x`).
+
+#### 2. Import Button (Main App Only)
+Because the locked extension cannot access the photo library, an **Import Overlay** appears in the main app when triggered:
+*   **Trigger**: App launch or `sessionImporter.scanForSessions()`.
+*   **Condition**: Valid video files found in the shared `sessionContentURL` container.
+*   **UI**:
+    *   **Info Box**: "Found **X** Ski Videos" (Top Center).
+    *   **Action Button**: "Click to Import" (Yellow Button).
+    *   **Behavior**: Tapping the button saves videos to Photos and deletes the temp files.
+
+#### 3. Bounding Boxes
+*   **Gray Box**: All person detections returned by YOLOv8.
+*   **Green Box**: The specific "Primary Target" selected by the tracking algorithm (closest to center/largest).
+
+## 6. Verification Test Cases
+
+### Locked Capture & Power Button Stop
+This test verifies that the app correctly handles the "Power Button to Stop" lifecycle event, which is common in skiing scenarios (saving battery).
+
+1.  **Start (Locked)**: Launch app via Action Button or Control Center in **Locked State**.
+2.  **Record**: Wait for countdown (or press Volume Down) to start recording.
+3.  **Stop (Power Off)**: Press the **Power Button** once. This should:
+    *   Stop the recording.
+    *   Lock the screen and turn off the display.
+    *   **Crucial**: The `CaptureProcessor` must catch the stop event and save the video to the Session Container despite the app entering the background.
+4.  **Verify (Unlocked)**: Unlock the phone and open the **Main SkiCamera App**.
+5.  **Check UI**:
+    *   Look for the **Import Overlay** at the top.
+    *   It should read **"Found 1 Ski Videos"**.
+6.  **Import**: Tap **"Click to Import"**.
+    *   Status should change to "Importing...".
+    *   Button should disappear after completion.
+7.  **Final Check**: Open **Photos App** and verify the new video is present.
