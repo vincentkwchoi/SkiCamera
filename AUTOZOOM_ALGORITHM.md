@@ -3,97 +3,118 @@
 > [!NOTE]
 > This algorithm is implemented as a **Cross-Platform Shared Module** using Kotlin Multiplatform (KMP). The core logic in `native/shared` is consumed by both the Native Android and Native iOS applications to ensure identical framing behavior across devices.
 
-## 1. Core Concept
+## 1. Objective
 To create a smooth auto-zoom for a skier without overshoot, we utilize a **Critically Damped PID Controller**. This approach treats the zoom level as a physical system with "mass" and "friction," ensuring the lens arrives at the target zoom level quickly but stops precisely on target.
 
 Critical damping ($\zeta = 1$) is the specific tuning where a system returns to its target in the shortest possible time without crossing (overshooting) it.
 
 **The "Error"**: The difference between the **Target Zoom** (the zoom level where the skier occupies a specific % of the frame) and the **Current Zoom**.
 
-## 2. Algorithm Strategy
+## 2. Execution Pipeline
 
-The algorithm runs in a loop (e.g., 30 or 60 Hz) following these three phases:
+The complete module pipeline involves a tightly coupled interaction between the perception system (Tracker/Smoothing), the decision system (Hysteresis), and the control system (PID).
 
-### Phase A: Subject Detection (The Input)
-1.  **Detection**: Use **YOLOv8** (Nano or Small) for real-time object detection.
-    *   **Rationale**: YOLOv8 offers superior reliability for detecting small, distant, or partially occluded subjects (common in skiing) compared to MediaPipe Pose, which is optimized for larger, full-body subjects. MediaPipe Pose is used optionally for skeletal visualization but not for the primary tracking loop.
-    *   **iOS Implementation**: MUST convert the model to **CoreML** format (`.mlpackage`) with **Non-Maximum Suppression (NMS)** baked in. This allows the model to run on the **Apple Neural Engine (ANE)**, ensuring high performance (>60 FPS) and low battery consumption. Raw PyTorch models on CPU are not viable.
-2.  **Subject Selection (ByteTrack)**:
-    *   **Logic**: We use **ByteTrack** (via YOLOv8) which employs a Kalman Filter to track subjects across frames.
-    *   **First Lock**: Select the person closest to the **Frame Center** and assign them a `Target ID`.
-    *   **Tracking**: In subsequent frames, look specifically for the subject with the `Target ID`.
-    *   **Recovery**: If the `Target ID` is lost (e.g., extended occlusion), the system falls back to finding the closest candidate to the last known position to re-initialize tracking.
-    *   **Benefit**: Robustly handles mutual occlusion (skiers crossing paths) and brief disappearances (behind trees or snow spray).
-3.  **Current Scale ($S_{current}$)**:
-    $$ S_{current} = \frac{\text{Height of Skier Bounding Box}}{\text{Total Frame Height}} $$
-4.  **Target Scale ($S_{target}$)**: Define the desired proportion of the frame the skier should fill (e.g., 0.15 or 15%).
-
-### Phase B: The Control Logic (The Brain)
-We use a **PD Controller (Proportional-Derivative)** tuned for critical damping. The Integral (I) term is skipped to avoid overshoot in fast-moving scenarios.
-
-**Formula for Zoom Velocity ($v$)**:
-$$ v(t) = K_p \cdot \text{Error} + K_d \cdot \frac{d(\text{Error})}{dt} $$
-
-**Tuning for Critical Damping**:
-$$ K_d = 2\sqrt{K_p} $$
-
-*   **$K_p$ (Proportional)**: Determines reactiveness. Start low.
-*   **$K_d$ (Derivative)**: Acts as the "brake." By setting $K_d = 2\sqrt{K_p}$, the zoom slows down perfectly as it approaches the target.
-
-### Phase C: Logarithmic Scaling (The Output)
-Human perception of zoom is logarithmic, not linear (1x to 2x feels the same as 4x to 8x).
-
-*   **Rule**: Apply the control algorithm to the **log** of the zoom level. This prevents the "rushing" feeling when zooming in from far away and ensures visual consistency.
-
-## 3. Implementation Steps
-
-| Component | Recommendation | Why? |
-| :--- | :--- | :--- |
-| **Tracker** | ByteTrack (Kalman Filter) | Uses motion prediction to maintain ID across frames. Handles crossing paths and occlusion better than simple sticky tracking. |
-| **Smoothing** | Exponential Moving Average (EMA) | Raw bounding box data is jittery. Smooth the input before feeding it to the PID. |
-| **Constraint** | Rate Limiter | Limit the max "Zoom Speed" to avoid motion sickness. |
-
-## 4. Execution Flow
-1.  **Detect**: Get skier bounding box height.
-2.  **Smooth**: Apply 3-5 frame moving average to the height value.
-3.  **Calculate Error**: Diff between smoothed height and desired height (e.g., 400 pixels).
-4.  **Compute Scale Change**: Use the critically damped formula ($K_d = 2\sqrt{K_p}$).
-5.  **Update Zoom**: Apply change using logarithmic scaling.
-
-## 5. System Architecture
-
-The complete module pipeline consists of these four distinct blocks:
+### A. Architectural Diagram
 
 ```mermaid
 graph LR
-    A("Camera Input") --> B("Tracker")
-    B -->|"Raw Box"| C("Smoothing")
-    C -->|"Smoothed Size"| D("PID Controller")
-    D -->|"Velocity Command"| E("Constraint")
+    A("Camera Input") --> B1("Detection")
+    B1 -->|"Raw List"| B2("Selection")
+    B2 -->|"Target Box"| C("Smoothing")
+    C -->|"Smoothed Size"| T("Target Calc")
+    T -->|"Raw Error"| H("Hysteresis Gate")
+    H -->|"Active Error"| D("PID Controller")
+    D -->|"Linear Velocity"| L("Log Scaling")
+    L -->|"Log Velocity"| E("Constraint")
     E -->|"Safe Zoom Level"| F("Hardware Lens")
-
+    
     subgraph "1. Perception"
-    B
+    B1
+    B2
     C
+    T
+    H
     end
-
+    
     subgraph "2. Control"
     D
+    L
     end
-
+    
     subgraph "3. Safety"
     E
     end
 ```
 
+### B. Execution Flow Steps
+1.  **Detection**: Detect objects (YOLOv8) in the frame.
+2.  **Subject Selection**: Use ByteTrack + Center Proximity bias to select the primary target.
+3.  **Smoothing**: Apply Exponential Moving Average (EMA) to the bounding box dimensions.
+4.  **Target Calculation**: Compare `Current Zoom` vs `Target Zoom` to find the Raw Error.
+5.  **Gatekeeper (Hysteresis)**: 
+    *   If `Stable`: Check if `Error > Start Threshold` (0.10).
+    *   If `Zooming`: Check if `Error < Stop Threshold` (0.05).
+6.  **Control Logic**: Feed the Active Error into the **PD Controller** to compute `Zoom Velocity`.
+7.  **Log Scaling**: Map linear velocity to logarithmic zoom scale (human perception).
+8.  **Constraint**: Apply Rate Limiting (`v_max`) to prevent motion sickness.
+9.  **Update Zoom**: Send final zoom command to hardware lens.
+
+## 3. Component Details Needs
+
+### 1. Detection (The Input)
+*   **Logic**: Use **YOLOv8** (Nano or Small) for real-time object detection.
+*   **iOS Implementation**: MUST convert to **CoreML** with **NMS** baked in to use the **Apple Neural Engine (ANE)**.
+*   **Rationale**: Superior reliability for small/distant subjects compared to MediaPipe Pose.
+
+### 2. Subject Selection (ByteTrack)
+*   **Logic**:
+    1.  **YOLOv8 ("The Eye")**: Detects *all* candidate objects in the frame every time (stateless). It outputs a raw list (e.g., 5 skiers).
+    2.  **ByteTrack ("The Memory")**: Receives these detections and matches them against its history of *all* active tracks. It uses Kalman Filters to predict where each object *should* be and assigns/maintains a persistent ID for *every* individual (e.g., Skier #42, Skier #43).
+*   **Target ID**: From this pool of *all* tracked subjects, the Auto-Zoom system selects **one** specific ID (e.g., #42) as the "Primary Target".
+*   **First Lock**: The algorithm initially picks the ID of the person closest to the **Frame Center**.
+*   **Tracking Loop**: In subsequent frames, the system ignores all other IDs and exclusively inputs the bounding box of the `Target ID` into the zooming PID.
+*   **Recovery**: Fallback to closest candidate if the `Target ID` is lost (deleted by ByteTrack due to extended absence).
+*   **Benefit**: Robustly handles mutual occlusion and brief disappearances (e.g., snow spray).
+
+### 3. Smoothing (EMA)
+*   **Logic**: Apply Exponential Moving Average (EMA) or simple rolling average to raw bounding box dimensions.
+*   **Purpose**: Raw detection boxes jitter frame-to-frame. Smoothing prevents this noise from being amplified by the PID controller.
+
+### 4. Target Calculation
+*   **Current Scale**: Skier Height / Frame Height.
+*   **Target Scale**: Desired fill percentage (e.g., 0.15).
+*   **Raw Error**: Target Scale - Current Scale.
+
+### 5. Hysteresis (The Gatekeeper)
+To prevent "hunting" or "breathing" (constant micro-adjustments), we apply a Schmitt Trigger logic:
+1.  **Stable State**: If the system is holding steady, do NOT start zooming until `Error > Start Threshold` (10%).
+2.  **Zooming State**: If the system is already zooming, do NOT stop until `Error < Stop Threshold` (5%).
+
+### 6. Control Logic (PID)
+We use a **PD Controller (Proportional-Derivative)** tuned for critical damping.
+*   **Formula**: $v(t) = K_p \cdot \text{Error} + K_d \cdot \frac{d(\text{Error})}{dt}$
+*   **Critical Damping**: $K_d = 2\sqrt{K_p}$. This ensures the zoom slows down perfectly as it approaches the target without overshooting.
+
+### 7. Logarithmic Scaling
+*   **Rule**: Apply the control command to the **log** of the zoom level.
+*   **Why**: Human perception of zoom is logarithmic ($1x \to 2x$ feels the same as $4x \to 8x$). Using linear control at high zoom levels causes a "rushing" sensation.
+
+### 8. Constraint (Safety)
+*   **Rate Limiter**: Clamps the maximum zoom velocity.
+*   **Purpose**: Preventing motion sickness and ensuring the hardware lens motor is not overdriven.
+
 ### Component I/O Specifications
 
-| Component | Input Parameters | Output Parameters | purpose |
+| Component | Input Parameters | Output Parameters | Purpose |
 | :--- | :--- | :--- | :--- |
-| **1. Tracker** | • Video Frame `(ImageBuffer)`<br>• Previous State `(List<Track>)` | • Bounding Box `Rect(x, y, w, h)`<br>• Confidence Score `(float)` | Detects skier and maintains ID across frames. |
-| **2. Smoothing** | • Raw Box Height `h_raw` (px)<br>• Alpha `α` (0.1 - 0.3)<br>• **Previous Smoothed Height** `h_prev` | • Smoothed Height `h_smooth` (px) | Reduces high-frequency jitter from detection noise. |
-| **3. PID Controller** | • Target Height `h_target` (px)<br>• Smoothed Height `h_smooth` (px)<br>• Delta Time `dt` (sec) | • Zoom Velocity `v_zoom` (factor/sec) | Calculates how fast to change zoom to minimize error. |
-| **4. Constraint** | • Raw Velocity `v_zoom`<br>• Max Speed Limit `v_max` | • Safe Velocity `v_final` | Prevents nausea by clamping extreme zoom speeds. |
+| **1. Detection** | • Video Frame `(ImageBuffer)` | • List of Detections `[Rect, Class, Conf]` | Runs YOLOv8 to find all potential objects. |
+| **2. Selection** | • Detections<br>• Previous Track History | • Primary Target `Rect` | ByteTrack logic + Centrality to pick *the* skier. |
+| **3. Smoothing** | • Target Box Dimensions | • Smoothed Dimensions `h_smooth` | Reduces high-frequency jitter from detection noise. |
+| **4. Target Calc** | • Smoothed Height<br>• Target % (0.15) | • Raw Error `(Target - Current)` | Calculates how far off the zoom is. |
+| **5. Hysteresis** | • Raw Error<br>• Current State | • Active Error `(0 if clamped)` | Prevents start/stop chatter (Deadband). |
+| **6. PID Controller** | • Active Error<br>• Delta Time `dt` | • Linear Velocity `v_lin` | Calculates corrective action speed. |
+| **7. Log Scaling** | • Linear Velocity `v_lin`<br>• Current Zoom `z` | • Log Velocity `v_log` | Maps speed to human-perceived scale. |
+| **8. Constraint** | • Log Velocity `v_log`<br>• Safety Limits | • Final Zoom Level | Prevents nausea and hardware overrun. |
 
 #### Data Structure Definitions
 *   **Track Object**: Represents one identified skier over time.
@@ -102,7 +123,7 @@ graph LR
     *   `kalman_state`: Internal matrix representing velocity/covariance (used to predict where box will be next frame).
     *   `missed_frames`: Counter. If > 30, we delete this track (skier left the mountain).
 
-## 6. Handling Camera Panning (Lateral Movement)
+## 4. Handling Camera Panning (Lateral Movement)
 Since the camera operator will pan to follow the skier, we must adjust the algorithm to distinguish **Subject Motion** vs **Camera Motion**.
 
 1.  **Ignore Horizontal Position**: The zoom algorithm should calculate scale based **only on Bounding Box Height**, not width or x-position.
@@ -114,7 +135,7 @@ Since the camera operator will pan to follow the skier, we must adjust the algor
     *   If the skier moves out of frame (due to bad panning), the tracker will loose them.
     *   **Action**: If tracking is lost, **HOLD** current zoom. Do NOT zoom out to search (this looks chaotic in video). Wait for re-acquisition.
 
-## 7. Auto-Pan (Digital Stabilization)
+## 5. Auto-Pan (Digital Stabilization)
 To support "Auto-Pan" where the algorithm respects the operator's framing (e.g., keeping subject on the right vs. center):
 
 ### The Concept: "Proportional Framing"
@@ -134,7 +155,7 @@ Instead of forcing the subject to `Center (0.5, 0.5)`, we use a **Proportional P
 *   **Zoom**: Critically Damped PID.
 *   **Pan**: Bypassed (Direct Proportional Mapping).
 
-## 8. Calibration & Testing Module
+## 6. Calibration & Testing Module
 To verify the smooth mechanics without hitting the slopes, we will build a **Real-Time Interactive Simulator**.
 
 ### A. Input Simulation (The "Virtual Skier")
@@ -156,7 +177,7 @@ To verify the smooth mechanics without hitting the slopes, we will build a **Rea
     *   Adjust `Kp` (Reaction Speed) and `Kd` (Damping/Braking) on the fly.
     *   Toggle `Constraint` on/off to see motion sickness effects.
 
-## 9. Current Configuration Parameters
+## 7. Current Configuration Parameters
 (As of Jan 2026 Implementation)
 
 ### A. Performance Throttling

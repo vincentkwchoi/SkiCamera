@@ -103,10 +103,8 @@ A consolidated list of all significant code events and their execution chains.
       <td>Camera</td>
       <td><b>Frame Arrived</b></td>
       <td><code>AVCaptureVideoDataOutput</code></td>
-      <td><b>Frame Arrived</b></td>
-      <td><code>AVCaptureVideoDataOutput</code></td>
       <td><code>FrameDistributor.captureOutput</code> &rarr; <b>Update Preview</b> (Main Thread) &rarr; <b>Throttle (1/1)</b> &rarr; <code>AutoZoomService</code> (Async)</td>
-      <td><a href="#52-auto-zoom-analysis">Link</a></td>
+      <td><a href="#52-frame-distribution--auto-zoom-analysis">Link</a></td>
     </tr>
     <tr>
       <td><b>Data</b></td>
@@ -257,20 +255,38 @@ System events allow the app to react to hardware changes and lifecycle transitio
         *   Copy temp file to this container.
         *   **Log**: "Locked Capture: Successfully saved video..."
 
-### 5.2 Auto-Zoom Analysis
-**Class**: `AutoZoomService` (via `FrameDistributor`)
+### 5.2 Frame Distribution & Auto-Zoom Analysis
+**Class**: `FrameDistributor` (Splitter) & `AutoZoomService` (Consumer)
+
+The system uses a `FrameDistributor` to decouple visual preview performance from heavy analysis tasks.
+
+```mermaid
+graph LR
+    Camera[AVCaptureVideoDataOutput] -->|CMSampleBuffer| Dist[FrameDistributor]
+    
+    subgraph "Fast Path (Main Thread)"
+        Dist -->|Direct| Preview[CamPreviewViewModel]
+        Preview -->|CIImage| Render[Metal View]
+    end
+    
+    subgraph "Slow Path (Async Serial Queue)"
+        Dist -->|Throttled| Service[AutoZoomService]
+        Service -->|Frame| Detect[SkierAnalyzer]
+        Detect -->|BBox| PID[AutoZoomManager]
+        PID -->|Zoom Factor| Lens[Hardware Lens]
+    end
+```
 
 1.  **Distribution**: `FrameDistributor.captureOutput` receives `CMSampleBuffer`.
 2.  **Fast Path**: `Buffer` sent to `CamPreviewViewModel` to update UI Preview (Immediate, Main Thread).
 3.  **Slow Path**: `Buffer` sent to `AutoZoomService.processFrame` (Async Queue).
 4.  **Throttle**: `AutoZoomService` checks if `frameCounter % 1 == 0`. Process **Every Frame**.
 5.  **Detection**: `SkierAnalyzer` (YOLOv8) detects person.
-6.  **Zoom**: `AutoZoomManager` calculates new zoom level.
+    *   *Algorithm Ref*: **Phase A: Subject Detection** & **Step 1 (Tracker/Selection)**.
+6.  **Zoom Calculation**: `AutoZoomManager` calculates new zoom level.
+    *   *Algorithm Ref*: **Phase A (Smoothing)**, **Phase B (PID Control)**, and **Phase C (Logarithmic Scaling)**.
 7.  **Apply**: Service sets `device.videoZoomFactor`.
-4.  **Tracking**: ByteTrack algorithm assigns IDs to detected persons.
-5.  **Selection**: "Primary Target" is selected based on centrality and size.
-6.  **Calc**: Bounding box is converted to a zoom rectangle.
-7.  **Output**: `CamPreviewViewModel` updates the camera zoom factor using `device.ramp(toVideoZoomFactor: ...)`.
+8.  **Output**: `CamPreviewViewModel` updates the camera zoom factor using `device.ramp(toVideoZoomFactor: ...)`.
 
 ### 5.3 Session Import
 **Class**: `SessionImporter`

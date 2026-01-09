@@ -76,7 +76,7 @@ sequenceDiagram
     ViewModel->>UI: Update Final Label
 ```
 
-## 3. Video Pipeline
+## 4. Video Pipeline
 
 The application uses a singular `AVCaptureSession` to feed both the preview and the analysis engine simultaneously.
 
@@ -94,7 +94,7 @@ graph TD
     end
 ```
 
-## 4. Data Storage Strategy
+## 5. Data Storage Strategy
 
 The application uses `PHAssetCreationRequest` to save videos directly to the **Photo Library**, even when launched from the lock screen.
 
@@ -133,7 +133,7 @@ Since locked videos are not immediately visible in Photos, the **Main App** is r
 4. log debug message "Found session at URL: ..."
 
 This ensures a seamless experience: Users record quickly from the lock screen, and the videos appear in their Photos library as soon as they unlock the app.
-## 5. User Interface & Debug Overlay
+## 6. User Interface & Debug Overlay
 
 To assist with testing and verification in the field, a dense debug overlay is rendered on top of the camera preview.
 
@@ -159,7 +159,23 @@ Because the locked extension cannot access the photo library, an **Import Overla
 *   **Gray Box**: All person detections returned by YOLOv8.
 *   **Green Box**: The specific "Primary Target" selected by the tracking algorithm (closest to center/largest).
 
-## 6. Verification Test Cases
+## 7. Algorithm Code Mapping
+
+This table maps the logical components defined in [AUTOZOOM_ALGORITHM.md](AUTOZOOM_ALGORITHM.md) to their concrete Swift implementations in the iOS project.
+
+| Algorithm Phase | Logical Component | iOS Implementation Class | Code Implementation Notes |
+| :--- | :--- | :--- | :--- |
+| **Phase A**<Br>*(Perception)* | **1. Detection** | `SkierAnalyzer` | `analyze()` uses `VNCoreMLRequest` with YOLOv8. |
+| | **2. Selection** | `SkierAnalyzer` | `analyze()` logic performs "Sticky Tracking" (closest to last center) to select target. |
+| | **3. Smoothing** | `AutoZoomManager` | `SmoothingFilter` classes for Height, CenterX, CenterY. |
+| **Phase B**<br>*(Decision)* | **4. Target Calc** | `AutoZoomManager` | `update()` calculates `zoomError` based on `targetSubjectHeightRatio`. |
+| | **5. Hysteresis** | `AutoZoomManager` | `update()` checks `zoomTriggerThreshold` / `zoomStopThreshold` before setting `isZooming`. |
+| **Phase C**<br>*(Control)* | **6. Control Logic** | `AutoZoomManager` | `update()` applies Proportional control to modify `currentZoomScale`. |
+| | **7. Log Scaling** | `AutoZoomManager` | `currentZoomScale` (inverse zoom) inherently acts continuously. |
+| **Phase D**<br>*(Safety)* | **8. Constraint** | `AutoZoomManager` | `update()` clamps `currentZoomScale` between 0.05 (20x) and 1.0 (1x). |
+| **Output** | **9. Update Zoom** | `AutoZoomService` | `processFrame()` reads the `Rect` from Manager and calls `device.ramp` or `lockForConfiguration`. |
+
+## 8. Verification Test Cases
 
 ### Locked Capture & Power Button Stop
 This test verifies that the app correctly handles the "Power Button to Stop" lifecycle event, which is common in skiing scenarios (saving battery).
