@@ -156,3 +156,30 @@ To verify the smooth mechanics without hitting the slopes, we will build a **Rea
     *   Adjust `Kp` (Reaction Speed) and `Kd` (Damping/Braking) on the fly.
     *   Toggle `Constraint` on/off to see motion sickness effects.
 
+## 9. Current Configuration Parameters
+(As of Jan 2026 Implementation)
+
+### A. Performance Throttling
+*   **Frame Skip**: `1 in 3`
+    *   **Logic**: `frameCounter % 3 == 0`
+    *   **Effect**: Reduces Neural Engine load. Effective Analysis Rate is ~20 FPS (at 60 FPS Camera input).
+
+### B. Zoom Physics (`AutoZoomManager`)
+*   **Delta Time (`dt`) Calculation**:
+    *   **Formula**: `dt = (1.0 / CameraFPS) * FrameSkipInterval`
+    *   **Logic**: Since we skip frames, we must tell the PID controller that *more time has passed* between updates.
+    *   **Example**: At 60 FPS with 3-frame skip, `dt` = 0.05s (instead of 0.016s). This maintains correct zoom velocity.
+
+*   **Target Subject Height**: `0.15` (15% of frame height)
+    *   **Effect**: The algorithm aims to keep the skier occupying 15% of the screen vertical height.
+*   **Zoom Gain (`kZoom`)**: `10.0`
+    *   **Effect**: Controls reaction speed to size errors. Higher values = faster/snappier zoom, lower values = slower/smoother.
+*   **Smoothing Alpha**: `0.2`
+    *   **Effect**: Low-pass filter for Subject H/X/Y. `0.2` means the new detection contributes 20% to the current state, and 80% is retained history. Reduces jitter from bounding box noise.
+
+### C. Constraints
+*   **Max Zoom**: `20x` (Scale 0.05)
+*   **Min Zoom**: `1x` (Scale 1.0)
+*   **Manual Ramp Rate**: `2.0`
+    *   **Effect**: When holding Volume Buttons, the zoom factor changes by 2.0x per second.
+

@@ -112,6 +112,8 @@
 			membershipExceptions = (
 				Camera/AppStorageConfigProvider.swift,
 				Camera/Logic/AutoZoomManager.swift,
+				Camera/Logic/AutoZoomService.swift,
+				Camera/Logic/FrameDistributor.swift,
 				Camera/Logic/SkierAnalyzer.swift,
 				Camera/OpenMainAppAction.swift,
 				Camera/View/CameraPreview.swift,

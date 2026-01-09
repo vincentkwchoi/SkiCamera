@@ -15,6 +15,7 @@ struct ContentView: View {
     @StateObject private var previewViewModel: CamPreviewViewModel
     @StateObject private var viewModel: MainViewModel
     @StateObject private var captureProcessor: CaptureProcessor
+    @StateObject private var autoZoomService: AutoZoomService // [New]
     @EnvironmentObject var sessionImporter: SessionImporter
     
     /// Construct ``ContentView`` given the instance of ``AppStorageConfigProvider``, which provides the information
@@ -22,14 +23,17 @@ struct ContentView: View {
     init(configProvider: AppStorageConfigProvider) {
         let previewViewModel = CamPreviewViewModel()
         let captureProcessor = CaptureProcessor(configProvider: configProvider)
+        let autoZoomService = AutoZoomService()
         let mainViewModel = MainViewModel(
             camPreviewViewModel: previewViewModel,
-            captureProcessor: captureProcessor
+            captureProcessor: captureProcessor,
+            autoZoomService: autoZoomService
         )
         
         self._previewViewModel = StateObject(wrappedValue: previewViewModel)
         self._captureProcessor = StateObject(wrappedValue: captureProcessor)
         self._viewModel = StateObject(wrappedValue: mainViewModel)
+        self._autoZoomService = StateObject(wrappedValue: autoZoomService)
     }
     
     // State for Simultaneous Press Detection
@@ -56,8 +60,8 @@ struct ContentView: View {
                                 // Bounding Box Overlay
                                 GeometryReader { geo in
                                     // Draw All Detections (Gray)
-                                    ForEach(previewViewModel.allDetectedRects.indices, id: \.self) { index in
-                                        let rect = previewViewModel.allDetectedRects[index]
+                                    ForEach(autoZoomService.allDetectedRects.indices, id: \.self) { index in
+                                        let rect = autoZoomService.allDetectedRects[index]
                                         Path { path in
                                             let w = geo.size.width
                                             let h = geo.size.height
@@ -73,7 +77,7 @@ struct ContentView: View {
                                     }
                                     
                                     // Draw Primary Target (Green)
-                                    if let rect = previewViewModel.detectedRect {
+                                    if let rect = autoZoomService.detectedRect {
                                         Path { path in
                                             let w = geo.size.width
                                             let h = geo.size.height
@@ -96,16 +100,18 @@ struct ContentView: View {
                     .overlay(alignment: .top) {
                         // Debug Info Overlay
                         VStack(alignment: .leading) {
-                            Text(previewViewModel.isManualZoomMode ? "MANUAL ZOOM" : "AUTO ZOOM")
-                                .foregroundColor(previewViewModel.isManualZoomMode ? .orange : .green)
+                            Text(autoZoomService.isManualZoomMode ? "MANUAL ZOOM" : "AUTO ZOOM")
+                                .foregroundColor(autoZoomService.isManualZoomMode ? .orange : .green)
                             Text(captureProcessor.configProvider.isLockedCapture ? "LOCKED" : "UNLOCKED")
                                 .foregroundColor(captureProcessor.configProvider.isLockedCapture ? .red : .green)
                             Text("Files: \(sessionImporter.detectedFiles.count)")
                                 .foregroundColor(.white)
-                            Text("Skier Height: \(String(format: "%.2f", previewViewModel.skierHeight))")
+                            Text("Skier Height: \(String(format: "%.2f", autoZoomService.skierHeight))")
                                 .foregroundColor(.white)
-                            Text("Zoom: \(String(format: "%.2f", previewViewModel.currentZoom))x")
+                            Text("Zoom: \(String(format: "%.2f", autoZoomService.currentZoom))x")
                                 .foregroundColor(.yellow)
+                            Text("Analysis: \(String(format: "%.1f", autoZoomService.analysisDurationMs))ms")
+                                .foregroundColor(.cyan)
                         }
                         .font(.system(size: 16, weight: .bold, design: .monospaced))
                         .padding()
@@ -232,18 +238,18 @@ struct ContentView: View {
                 // Primary action (Volume Down / Shutter)
                 isVolDownPressed = true
                 if isVolUpPressed {
-                    previewViewModel.resetToAutoZoom()
+                    autoZoomService.resetToAutoZoom()
                 } else {
-                    previewViewModel.buttonStatus = "Volume DOWN held"
-                    previewViewModel.startZoomingOut()
+                    autoZoomService.buttonStatus = "Volume DOWN held"
+                    autoZoomService.startZoomingOut()
                 }
             },
             onRelease: {
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
                 logger.log(level: .default, "Volume DOWN released")
                 isVolDownPressed = false
-                previewViewModel.buttonStatus = "Volume DOWN released"
-                previewViewModel.stopZooming()
+                autoZoomService.buttonStatus = "Volume DOWN released"
+                autoZoomService.stopZooming()
             },
             secondaryPress: {
                 // Double Click Detection (Volume Up)
@@ -266,18 +272,18 @@ struct ContentView: View {
                 // Secondary action (Volume Up)
                 isVolUpPressed = true
                 if isVolDownPressed {
-                    previewViewModel.resetToAutoZoom()
+                    autoZoomService.resetToAutoZoom()
                 } else {
-                    previewViewModel.buttonStatus = "Volume UP held"
-                    previewViewModel.startZoomingIn()
+                    autoZoomService.buttonStatus = "Volume UP held"
+                    autoZoomService.startZoomingIn()
                 }
             },
             secondaryRelease: {
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
                 logger.log(level: .default, "Volume UP released")
                 isVolUpPressed = false
-                previewViewModel.buttonStatus = "Volume UP released"
-                previewViewModel.stopZooming()
+                autoZoomService.buttonStatus = "Volume UP released"
+                autoZoomService.stopZooming()
             }
         )
         .task(id: scenePhase) {

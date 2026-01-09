@@ -2,6 +2,7 @@
 
 > [!IMPORTANT]
 > This document outlines the native iOS implementation of SkiCamera, focusing on the `LockedCameraCaptureExtension` and `AVFoundation` pipeline.
+> For detailed technical flows, see [UI_FLOWS_AND_EVENTS.md](UI_FLOWS_AND_EVENTS.md).
 
 ## 1. System Overview
 

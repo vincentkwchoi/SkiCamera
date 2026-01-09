@@ -32,10 +32,15 @@ class MainViewModel: ObservableObject {
     
     private let camPreviewViewModel: CamPreviewViewModel
     private let captureProcessor: CaptureProcessor
+    private let autoZoomService: AutoZoomService
     
-    init(camPreviewViewModel: CamPreviewViewModel, captureProcessor: CaptureProcessor) {
+    // Distributors
+    private let frameDistributor = FrameDistributor()
+    
+    init(camPreviewViewModel: CamPreviewViewModel, captureProcessor: CaptureProcessor, autoZoomService: AutoZoomService) {
         self.camPreviewViewModel = camPreviewViewModel
         self.captureProcessor = captureProcessor
+        self.autoZoomService = autoZoomService
     }
 
     @MainActor
@@ -134,7 +139,19 @@ class MainViewModel: ObservableObject {
         self.photoOutput = photoOutput
         self.movieOutput = movieOutput
         self.videoDevice = device
+        
+        // Wire up Dependencies
         self.camPreviewViewModel.videoDevice = device
+        self.autoZoomService.videoDevice = device
+        
+        // Wire up Distributor Outputs
+        frameDistributor.onPreviewFrame = { [weak self] buffer in
+            self?.camPreviewViewModel.handlePreviewFrame(buffer)
+        }
+        
+        frameDistributor.onAnalysisFrame = { [weak self] buffer in
+            self?.autoZoomService.processFrame(buffer)
+        }
     }
     
     private nonisolated func setupCameraSession(position: CameraPosition) async -> (AVCaptureSession, AVCapturePhotoOutput, AVCaptureMovieFileOutput, AVCaptureDevice)? {
@@ -156,7 +173,12 @@ class MainViewModel: ObservableObject {
             session.addInput(try AVCaptureDeviceInput(device: device))
             
             let videoOutput = AVCaptureVideoDataOutput()
-            videoOutput.setSampleBufferDelegate(camPreviewViewModel, queue: camPreviewViewModel.previewQueue)
+            // Set Delegate to FrameDistributor
+            // Queue must be serial
+            // We use the PreviewQueue from VM or create a new one. FrameDistributor needs a queue.
+            // Let's use a new labeled queue for the distributor
+            let distributorQueue = DispatchQueue(label: "frame_distributor_queue")
+            videoOutput.setSampleBufferDelegate(frameDistributor, queue: distributorQueue)
             
             if session.canAddOutput(videoOutput) {
                  session.addOutput(videoOutput)
