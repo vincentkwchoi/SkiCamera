@@ -120,7 +120,9 @@ class AutoZoomManager {
         // Only apply zoom if active
         if isZooming {
             // Error > 0 (Too small) -> Decrease Scale (Zoom In)
-            let scaleChange = -zoomError * kZoom * dt
+            // Logarithmic Scaling: Multiply by currentZoomScale to make the change proportional
+            // to the current level. unique change = same % change.
+            let scaleChange = -zoomError * kZoom * currentZoomScale * dt
             currentZoomScale += scaleChange
         }
         

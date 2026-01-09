@@ -96,8 +96,8 @@ We use a **PD Controller (Proportional-Derivative)** tuned for critical damping.
 *   **Critical Damping**: $K_d = 2\sqrt{K_p}$. This ensures the zoom slows down perfectly as it approaches the target without overshooting.
 
 ### 7. Logarithmic Scaling
-*   **Rule**: Apply the control command to the **log** of the zoom level.
-*   **Why**: Human perception of zoom is logarithmic ($1x \to 2x$ feels the same as $4x \to 8x$). Using linear control at high zoom levels causes a "rushing" sensation.
+*   **Rule**: Multiply the calculated velocity by the **current zoom scale** (`currentZoomScale`).
+*   **Why**: Human perception is logarithmic. A linear change of 0.1 is huge at 1.0 scale (10%) but tiny at 0.1 scale (1% of original frame). Multiplying by the current scale ensures the zoom velocity is always a constant **percentage** of the current frame size, making 1x -> 2x feel identical to 10x -> 20x.
 
 ### 8. Constraint (Safety)
 *   **Rate Limiter**: Clamps the maximum zoom velocity.

@@ -83,7 +83,8 @@ class AutoZoomManager {
         // Only apply zoom if active
         if (isZooming) {
             // If Error > 0 (Too small), we want Scale to DECREASE (zoom in).
-            val scaleChange = -zoomError * kZoom * dt
+            // Log Scaling: Multiply by currentZoomScale
+            val scaleChange = -zoomError * kZoom * currentZoomScale * dt
             currentZoomScale += scaleChange
         }
 
