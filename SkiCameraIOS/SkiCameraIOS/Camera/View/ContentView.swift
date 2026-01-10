@@ -16,7 +16,7 @@ struct ContentView: View {
     @StateObject private var viewModel: MainViewModel
     @StateObject private var captureProcessor: CaptureProcessor
     @StateObject private var autoZoomService: AutoZoomService // [New]
-    @EnvironmentObject var sessionImporter: SessionImporter
+    @StateObject private var autoZoomService: AutoZoomService // [New]
     
     /// Construct ``ContentView`` given the instance of ``AppStorageConfigProvider``, which provides the information
     /// about the current environment.
@@ -104,8 +104,6 @@ struct ContentView: View {
                                 .foregroundColor(autoZoomService.isManualZoomMode ? .orange : .green)
                             Text(captureProcessor.configProvider.isLockedCapture ? "LOCKED" : "UNLOCKED")
                                 .foregroundColor(captureProcessor.configProvider.isLockedCapture ? .red : .green)
-                            Text("Files: \(sessionImporter.detectedFiles.count)")
-                                .foregroundColor(.white)
                             Text("Skier Height: \(String(format: "%.2f", autoZoomService.skierHeight))")
                                 .foregroundColor(.white)
                             Text(autoZoomService.debugLabel) // Detailed Debug Info
@@ -162,48 +160,7 @@ struct ContentView: View {
             }
         }
         .overlay {
-            // Import Button Overlay (Top Center)
-            if !sessionImporter.detectedFiles.isEmpty {
-                VStack {
-                    Text("Found \(sessionImporter.detectedFiles.count) Ski Videos")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(8)
-                    
-                    Button(action: {
-                        Task {
-                            await sessionImporter.performImport()
-                        }
-                    }) {
-                        if sessionImporter.isImporting {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .tint(.black)
-                                .padding()
-                                .background(Color.white)
-                                .clipShape(Circle())
-                        } else {
-                            HStack {
-                                Image(systemName: "square.and.arrow.down")
-                                .foregroundColor(.black)
-                                Text("Click to Import")
-                                .foregroundColor(.black)
-                            }
-                            .fontWeight(.bold)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.yellow) // Ski Camera Yellow
-                            .cornerRadius(20)
-                            .shadow(radius: 4)
-                        }
-                    }
-                }
-                .padding(.top, 100)
-                .frame(maxWidth: .infinity, alignment: .top)
-            }
+            // Import Button Overlay Removed
 
             if !captureProcessor.saveResultText.isEmpty {
                 Text(captureProcessor.saveResultText)
@@ -297,14 +254,6 @@ struct ContentView: View {
                 await viewModel.updateFromAppContext()
                 await viewModel.setup()
                 
-                // Scan for new sessions whenever app becomes active (Main App Only)
-                if !captureProcessor.configProvider.isLockedCapture {
-                     if #available(iOS 18.0, *) {
-                         logger.log(level: .default, "App active, scanning for sessions...")
-                         await sessionImporter.scanForSessions()
-                     }
-                 }
-                
                 // Start Countdown Timer
                  if !isRecording {
                      for i in stride(from: 5, to: 0, by: -1) {
@@ -355,14 +304,7 @@ struct ContentView: View {
         .task {
             previewViewModel.initializeRenderer()
             
-            // Wire up CaptureProcessor to SessionImporter for auto-refresh (Main App Only)
-            captureProcessor.onSaveSuccess = {
-                if !captureProcessor.configProvider.isLockedCapture {
-                    Task {
-                        await sessionImporter.scanForSessions()
-                    }
-                }
-            }
+            // Wire up CaptureProcessor to SessionImporter for auto-refresh (Main App Only) - REMOVED
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LockedCameraStopRecording"))) { _ in
             let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
