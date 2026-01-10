@@ -27,7 +27,6 @@ struct LockedExtension: LockedCameraCaptureExtension {
 
 struct LockedCameraCaptureView: View {
     let session: LockedCameraCaptureSession
-    @StateObject private var sessionImporter = SessionImporter()
     @Environment(\.scenePhase) var scenePhase
     
     var body: some View {
@@ -36,7 +35,6 @@ struct LockedCameraCaptureView: View {
         ContentView(configProvider: AppStorageConfigProvider(session))
             .environment(\.scenePhase, .active)
             .environment(\.openMainApp, OpenMainAppAction(session: session))
-            .environmentObject(sessionImporter)
             .onChange(of: scenePhase) { newPhase in
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "LockedExtension")
                 logger.log(level: .default, "Real Scene Phase changed to: \(newPhase == .background ? "Background" : (newPhase == .inactive ? "Inactive" : "Active"), privacy: .public)")

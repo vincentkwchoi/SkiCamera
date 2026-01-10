@@ -15,8 +15,7 @@ struct ContentView: View {
     @StateObject private var previewViewModel: CamPreviewViewModel
     @StateObject private var viewModel: MainViewModel
     @StateObject private var captureProcessor: CaptureProcessor
-    @StateObject private var autoZoomService: AutoZoomService // [New]
-    @StateObject private var autoZoomService: AutoZoomService // [New]
+    @StateObject private var autoZoomService: AutoZoomService
     
     /// Construct ``ContentView`` given the instance of ``AppStorageConfigProvider``, which provides the information
     /// about the current environment.
