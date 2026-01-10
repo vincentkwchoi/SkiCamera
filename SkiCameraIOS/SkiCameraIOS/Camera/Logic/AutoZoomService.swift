@@ -17,8 +17,24 @@ class AutoZoomService: ObservableObject {
     @Published var isManualZoomMode: Bool = false
     
     // Dependencies
-    private let analyzer = SkierAnalyzer()
-    private let autoZoomManager = AutoZoomManager()
+    private let detection = SkierDetection()
+    private let selection = SkierSelection()
+    private let targetCalc = TargetZoomCalc()
+    private let gate = HysteresisGate()
+    // Kp increased to 5.0 to compensate for Log Scaling (multiplying by Scale < 1.0)
+    private let pid = PIDController(kp: 5.0, kd: 2.5) // Critically damped (~2*sqrt(kp))
+    private let scaling = ZoomLogScaling()
+    private let constraint = ZoomConstraint()
+    
+    // Pan Logic helper (kept simple here or moved to component)
+    private let centerXSmoother = SmoothingFilter(alpha: 0.2)
+    private let centerYSmoother = SmoothingFilter(alpha: 0.2)
+    
+    // State
+    private var currentZoomScale: Double = 1.0
+    private var currentCropCenterX: Double = 0.5
+    private var currentCropCenterY: Double = 0.5
+    
     weak var videoDevice: AVCaptureDevice?
     
     // Throttling
@@ -38,73 +54,121 @@ class AutoZoomService: ObservableObject {
         
         let startTime = Date()
         
-        // 2. Analysis (Async on background queue if needed, but SkierAnalyzer is synchronous)
-        // We run this on a dedicated serial queue to avoid blocking main thread or camera delegate
+        // 2. Analysis
         processingQueue.async { [weak self] in
             guard let self = self else { return }
             
-            self.analyzer.analyze(pixelBuffer: pixelBuffer) { resultTuple in
+// Step 1: Detection
+            self.detection.detect(pixelBuffer: pixelBuffer) { detections in
                 let duration = Date().timeIntervalSince(startTime) * 1000 // ms
                 
-                DispatchQueue.main.async {
-                    self.analysisDurationMs = duration
-                }
+                // Step 2: Selection
+                let primaryRect = self.selection.selectTarget(from: detections)
                 
-                // Unpack tuple
-                guard let tuple = resultTuple else {
+                guard let target = primaryRect else {
                     DispatchQueue.main.async {
+                        self.analysisDurationMs = duration
                         self.detectedRect = nil
-                        self.allDetectedRects = []
+                        self.allDetectedRects = detections
+                        self.skierHeight = 0.0
                         self.debugLabel = "Label: None"
                     }
                     return
                 }
                 
-                let primaryRect = tuple.0
-                let allRects = tuple.1
-                
-                // Update UI state
-                DispatchQueue.main.async {
-                    self.detectedRect = primaryRect
-                    self.allDetectedRects = allRects
-                    if let p = primaryRect {
-                        self.skierHeight = p.height
-                        
-                        let zoomState = self.autoZoomManager.isZooming ? "[ZOOMING]" : "[STABLE]"
-                        self.debugLabel = "Label: Person \(zoomState)"
-                    } else {
-                        self.debugLabel = "Label: None"
-                    }
-                }
-                
-                // Logic Loop
-                guard let detected = primaryRect else { return }
-                
-                // Skip auto-zoom if in manual mode
+                // Manual Mode Check
                 if self.isManualZoomMode {
-                    DispatchQueue.main.async {
-                        self.debugLabel = "Label: Person (Manual)"
-                    }
-                    // Zoom is controlled by UI, we just track
-                    return
+                     DispatchQueue.main.async {
+                         self.analysisDurationMs = duration
+                         self.detectedRect = primaryRect
+                         self.allDetectedRects = detections
+                         self.skierHeight = target.height
+                         self.debugLabel = "Label: Person (Manual)"
+                     }
+                     return
                 }
                 
-                // Calculate Dynamic dt
+                // Calculate dt
                 var fps: Double = 60.0
                 if let device = self.videoDevice {
                      let duration = device.activeVideoMinFrameDuration
-                     if duration.seconds > 0 {
-                         fps = 1.0 / duration.seconds
-                     }
+                     if duration.seconds > 0 { fps = 1.0 / duration.seconds }
                 }
                 let dt = (1.0 / fps) * Double(self.frameSkipInterval)
                 
-                let newCrop = self.autoZoomManager.update(skierRect: detected, dt: dt)
-                let targetZoom = 1.0 / max(0.01, newCrop.width)
+                // --- PIPELINE EXECUTION ---
                 
+                // Step 3: Target Calc
+                // Note: We use currentZoomScale from our state tracker
+                let zoomError = self.targetCalc.calculateError(subject: target, currentZoom: self.currentZoomScale)
+                
+                // Calculate Relative Error for Gate
+                let targetH = self.targetCalc.targetSubjectHeightRatio
+                let relativeError = targetH > 0 ? (zoomError / targetH) : 0.0
+                
+                // Step 4: Hysteresis (Using Relative Error)
+                let shouldZoom = self.gate.shouldZoom(relativeError: relativeError)
+                
+                var velocity: Double = 0.0
+                if shouldZoom {
+                    // Step 5: PID (Keeps using Absolute Error for control dynamics)
+                    velocity = self.pid.update(zoomError, dt)
+                    
+                    // Step 6: Log Scaling
+                    let scaleChange = -velocity * self.currentZoomScale * dt
+                    self.currentZoomScale += scaleChange
+                } else {
+                    // Reset PID state if gate is closed to prevent windup or jumps
+                    self.pid.reset()
+                }
+                
+                // Step 7: Constraint
+                self.currentZoomScale = self.constraint.clamp(self.currentZoomScale)
+                
+                // Step 8: Pan Logic
+                let smoothedCenterX = self.centerXSmoother.filter(target.centerX)
+                let smoothedCenterY = self.centerYSmoother.filter(target.centerY)
+                self.currentCropCenterX = smoothedCenterX
+                self.currentCropCenterY = smoothedCenterY
+                
+                // Clamp Pan
+                let halfScale = self.currentZoomScale / 2.0
+                self.currentCropCenterX = max(halfScale, min(1.0 - halfScale, self.currentCropCenterX))
+                self.currentCropCenterY = max(halfScale, min(1.0 - halfScale, self.currentCropCenterY))
+                
+                // Update Hardware
+                let newCrop = self.getRectFromCenterAndScale(cx: self.currentCropCenterX, cy: self.currentCropCenterY, scale: self.currentZoomScale)
+                let targetZoom = 1.0 / max(0.01, newCrop.width)
                 self.applyZoom(targetZoom)
+                
+                // Final UI Update with Debug Info
+                let currentScale = self.currentZoomScale
+                let gateState = shouldZoom ? "OPEN" : "CLOSED"
+                let threshold = self.gate.zoomTriggerThreshold
+                
+                DispatchQueue.main.async {
+                    self.analysisDurationMs = duration
+                    self.detectedRect = primaryRect
+                    self.allDetectedRects = detections
+                    self.skierHeight = target.height
+                    
+                    let hStr = String(format: "%.2f", target.height)
+                    let tStr = String(format: "%.2f", targetH)
+                    // Display Absolute Error + Relative %
+                    let eStr = String(format: "%.2f(%.0f%%)", zoomError, relativeError * 100)
+                    let gStr = String(format: "\(gateState)(%.0f%%)", threshold * 100)
+                    let vStr = String(format: "%.2f", velocity)
+                    let zStr = String(format: "%.2f", currentScale)
+                    
+                    self.debugLabel = "H:\(hStr) T:\(tStr) E:\(eStr) \(gStr) V:\(vStr) Z:\(zStr)"
+                }
             }
         }
+    }
+    
+    private func getRectFromCenterAndScale(cx: Double, cy: Double, scale: Double) -> Rect {
+        let half = scale / 2.0
+        return Rect.fromLTRB(cx - half, cy - half, cx + half, cy + half)
     }
     
     private func applyZoom(_ zoom: CGFloat) {
@@ -212,7 +276,15 @@ class AutoZoomService: ObservableObject {
      
      func setManualZoom(_ factor: CGFloat) {
          isManualZoomMode = true
-         autoZoomManager.syncZoomState(zoomFactor: factor)
+         // Sync internal state
+         self.currentZoomScale = 1.0 / max(1.0, Double(factor))
+         self.currentCropCenterX = 0.5 // Reset to center
+         self.currentCropCenterY = 0.5
+         
+         // Reset components
+         self.targetCalc.reset()
+         self.gate.reset()
+         self.pid.reset()
      }
      
      func resetToAutoZoom() {
@@ -221,7 +293,15 @@ class AutoZoomService: ObservableObject {
          stopZooming()
          
          // Sync state
-         autoZoomManager.syncZoomState(zoomFactor: device.videoZoomFactor)
+         self.currentZoomScale = 1.0 / max(1.0, Double(device.videoZoomFactor))
+         self.currentCropCenterX = 0.5
+         self.currentCropCenterY = 0.5
+         
+         // Reset components
+         self.targetCalc.reset()
+         self.gate.reset()
+         self.pid.reset()
+         
          DispatchQueue.main.async {
              self.isManualZoomMode = false
              self.debugLabel = "Label: Auto Resumed"

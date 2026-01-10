@@ -108,6 +108,9 @@ struct ContentView: View {
                                 .foregroundColor(.white)
                             Text("Skier Height: \(String(format: "%.2f", autoZoomService.skierHeight))")
                                 .foregroundColor(.white)
+                            Text(autoZoomService.debugLabel) // Detailed Debug Info
+                                .foregroundColor(.white)
+                                .font(.system(size: 12))
                             Text("Zoom: \(String(format: "%.2f", autoZoomService.currentZoom))x")
                                 .foregroundColor(.yellow)
                             Text("Analysis: \(String(format: "%.1f", autoZoomService.analysisDurationMs))ms")
