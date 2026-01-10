@@ -91,27 +91,11 @@ A consolidated list of all significant code events and their execution chains.
       <td><a href="#31-volume-buttons-zoom--recording">Link</a></td>
     </tr>
     <tr>
-      <td><b>Input</b></td>
-      <td>User</td>
-      <td><b>Tap Import Button</b></td>
-      <td><code>ContentView</code></td>
-      <td><code>SessionImporter.performImport()</code> &rarr; Save to <code>PHPhotoLibrary</code> &rarr; Delete Temp File</td>
-      <td><a href="#32-on-screen-ui">Link</a></td>
-    </tr>
-    <tr>
-      <td><b>Data</b></td>
-      <td>Camera</td>
-      <td><b>Frame Arrived</b></td>
-      <td><code>AVCaptureVideoDataOutput</code></td>
-      <td><code>FrameDistributor.captureOutput</code> &rarr; <b>Update Preview</b> (Main Thread) &rarr; <b>Throttle (1/1)</b> &rarr; <code>AutoZoomService</code> (Async)</td>
-      <td><a href="#52-frame-distribution--auto-zoom-analysis">Link</a></td>
-    </tr>
-    <tr>
       <td><b>Data</b></td>
       <td>Recorder</td>
       <td><b>Save Finished</b></td>
       <td><code>CaptureProcessor</code></td>
-      <td><code>fileOutput(_:didFinishRecordingTo:)</code> &rarr; Check Locked State &rarr; Copy to Session Container</td>
+      <td><code>saveMovieToLibrary(_:)</code> &rarr; <code>PHAssetCreationRequest</code> &rarr; <b>Save to Photos</b></td>
       <td><a href="#51-video-recording--saving">Link</a></td>
     </tr>
     <tr>
@@ -152,13 +136,10 @@ graph TD
     CheckPerms -->|Allowed| Active[".scenePhase = .active"]
     CheckPerms -->|Denied| Error["Show Permission Hint"]
     
-    Active --> Scan["SessionImporter.scanForSessions"]
     Active --> Setup["Setup Camera Session"]
     Active --> Preview["Camera Preview Active"]
     
-    Scan --> CheckFiles{"Files Found?"}
-    CheckFiles -->|Yes| ShowImport["Show 'Click to Import' UI"]
-    CheckFiles -->|No| Ready["Ready for Capture"]
+    Preview --> Ready["Ready for Capture"]
 ```
 
 ### 2.2 Locked Launch (Extension)
@@ -209,7 +190,6 @@ Inputs are handled primarily in `ContentView.swift` via the `.onPressCapture` mo
 
 | Element | Trigger | Action | Processing Logic |
 | :--- | :--- | :--- | :--- |
-| **Import Button** | Tap | **Import Videos** | Calls `SessionImporter.performImport()`. Moves files from Shared Container to Photos Library. |
 | **Stop Button** | Tap | **Stop Recording** | Calls `viewModel.stopRecording()`. Updates UI state `isRecording = false`. |
 | **Countdown** | Auto | **Start Recording** | `ContentView` loop counts down from 5, then triggers `startRecording()`. |
 
@@ -247,13 +227,12 @@ System events allow the app to react to hardware changes and lifecycle transitio
 
 1.  **Input**: `AVCaptureMovieFileOutput` receives video data.
 2.  **Stop**: `stopRecording()` is called.
-3.  **Delegate**: `fileOutput(_:didFinishRecordingTo:...)` is triggered.
-4.  **Decision**:
-    *   **IF Unlocked**: Use `PHAssetCreationRequest` to save directly to **Photos Library**.
-    *   **IF Locked**:
-        *   Locate `session.sessionContentURL` (Shared Container).
-        *   Copy temp file to this container.
-        *   **Log**: "Locked Capture: Successfully saved video..."
+3.  **Delegate**: `fileOutput` calls `saveMovieToLibrary`.
+4.  **Action**:
+    *   Calls `PHPhotoLibrary.shared().performChanges`.
+    *   Creates a `PHAssetCreationRequest` with the file URL.
+    *   **Outcome**: The video is saved directly to the user's **Photo Library** (Recents Album).
+    *   **Note**: This works even in **Locked** mode, as Camera Extensions are granted write-only access to Photos during capture.
 
 ### 5.2 Frame Distribution & Auto-Zoom Analysis
 **Class**: `FrameDistributor` (Splitter) & `AutoZoomService` (Consumer)
@@ -288,13 +267,4 @@ graph LR
 7.  **Apply**: Service sets `device.videoZoomFactor`.
 8.  **Output**: `CamPreviewViewModel` updates the camera zoom factor using `device.ramp(toVideoZoomFactor: ...)`.
 
-### 5.3 Session Import
-**Class**: `SessionImporter`
 
-1.  **Trigger**: App Launch or Manual Refresh.
-2.  **Scan**: Checks `LockedCameraCaptureManager.shared.sessionContentURLs`.
-3.  **List**: Enumerates `.mov` files. Update UI "Found X Files".
-4.  **Import**:
-    *   Request Photos Permission.
-    *   Save file to Photos.
-    *   **Delete** original file from Shared Container (Crucial for storage management).

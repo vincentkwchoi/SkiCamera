@@ -68,13 +68,14 @@ graph LR
 
 ### 2. Subject Selection (ByteTrack)
 *   **Logic**:
-    1.  **YOLOv8 ("The Eye")**: Detects *all* candidate objects in the frame every time (stateless). It outputs a raw list (e.g., 5 skiers).
-    2.  **ByteTrack ("The Memory")**: Receives these detections and matches them against its history of *all* active tracks. It uses Kalman Filters to predict where each object *should* be and assigns/maintains a persistent ID for *every* individual (e.g., Skier #42, Skier #43).
-*   **Target ID**: From this pool of *all* tracked subjects, the Auto-Zoom system selects **one** specific ID (e.g., #42) as the "Primary Target".
-*   **First Lock**: The algorithm initially picks the ID of the person closest to the **Frame Center**.
-*   **Tracking Loop**: In subsequent frames, the system ignores all other IDs and exclusively inputs the bounding box of the `Target ID` into the zooming PID.
-*   **Recovery**: Fallback to closest candidate if the `Target ID` is lost (deleted by ByteTrack due to extended absence).
-*   **Benefit**: Robustly handles mutual occlusion and brief disappearances (e.g., snow spray).
+    1.  **YOLOv8 ("The Eye")**: Detects *all* candidate objects. Returns a list of `Rect`s with confidence scores.
+    2.  **ByteTrack ("The Memory")**: A robust multi-object tracking algorithm.
+        *   **Kalman Filter**: Predicts the next position of each track to handle occlusions and missing detections.
+        *   **Dual-Stage Matching**:
+            *   **Stage 1**: Matches High Confidence (>0.5) detections to existing tracks using IoU.
+            *   **Stage 2**: Matches Low Confidence (0.1-0.5) detections to "Lost" tracks. This "rescues" skiers who are partially occluded or far away (low detection score) but effectively tracked.
+*   **Target Locking**: The system assigns a persistent ID. If the locked target is lost briefly, the Kalman Filter keeps the track alive. If lost for >1s, we fall back to the closest-to-center subject.
+*   **Benefit**: Robustly handles mutual occlusion (skiers crossing paths) and low-visibility conditions.
 
 ### 3. Smoothing (EMA)
 *   **Logic**: Apply Exponential Moving Average (EMA) or simple rolling average to raw bounding box dimensions.
@@ -86,9 +87,10 @@ graph LR
 *   **Raw Error**: Target Scale - Current Scale.
 
 ### 5. Hysteresis (The Gatekeeper)
-To prevent "hunting" or "breathing" (constant micro-adjustments), we apply a Schmitt Trigger logic:
-1.  **Stable State**: If the system is holding steady, do NOT start zooming until `Error > Start Threshold` (10%).
-2.  **Zooming State**: If the system is already zooming, do NOT stop until `Error < Stop Threshold` (5%).
+To prevent "hunting" or "breathing" (constant micro-adjustments), we apply a Schmitt Trigger logic using **Relative Error**:
+1.  **Stable State**: Zoom **STARTS** only if the *Relative Error* > **15%**. (e.g., if Target is 0.15, Error must be > 0.0225).
+2.  **Zooming State**: Zoom **STOPS** only if the *Relative Error* < **5%**.
+3.  **Why Relative?**: A fixed absolute error (e.g., 0.10) is too large for small subjects. 10% screen height error on a small skier is massive. Relative % ensures consistent responsiveness at all zoom levels.
 
 ### 6. Control Logic (PID)
 We use a **PD Controller (Proportional-Derivative)** tuned for critical damping.
@@ -117,11 +119,12 @@ We use a **PD Controller (Proportional-Derivative)** tuned for critical damping.
 | **8. Constraint** | • Log Velocity `v_log`<br>• Safety Limits | • Final Zoom Level | Prevents nausea and hardware overrun. |
 
 #### Data Structure Definitions
-*   **Track Object**: Represents one identified skier over time.
+*   **Track Object (ByteTrack)**:
     *   `id`: Unique Integer (e.g., #42).
-    *   `bbox`: The current position `Rect(x,y,w,h)`.
-    *   `kalman_state`: Internal matrix representing velocity/covariance (used to predict where box will be next frame).
-    *   `missed_frames`: Counter. If > 30, we delete this track (skier left the mountain).
+    *   `rect`: The current position `Rect(x,y,w,h)`.
+    *   `kalman_filter`: Stores state vector (pos + velocity) and covariance matrix.
+    *   `state`: New, Tracked, Lost, or Removed.
+    *   `missed_frames`: Counter. Max 30 frames tolerance.
 
 ## 4. Handling Camera Panning (Lateral Movement)
 Since the camera operator will pan to follow the skier, we must adjust the algorithm to distinguish **Subject Motion** vs **Camera Motion**.
@@ -205,10 +208,10 @@ To verify the smooth mechanics without hitting the slopes, we will build a **Rea
     *   **Effect**: When holding Volume Buttons, the zoom factor changes by 2.0x per second.
 
 ### D. Hysteresis (Deadband)
-*   **Trigger Threshold**: `0.10` (10% Error)
-    *   **Logic**: Zoom **STARTS** only if `abs(target - current) > 0.10`.
+*   **Trigger Threshold**: `0.15` (15% Relative Error)
+    *   **Logic**: Zoom **STARTS** only if `relative_error > 0.15`.
     *   **Purpose**: Prevents the lens from hunting when the subject size is changing slightly (e.g., breathing, minor posture changes).
-*   **Stop Threshold**: `0.05` (5% Error)
-    *   **Logic**: Zoom **STOPS** only if `abs(target - current) < 0.05`.
+*   **Stop Threshold**: `0.05` (5% Relative Error)
+    *   **Logic**: Zoom **STOPS** only if `relative_error < 0.05`.
     *   **Purpose**: Ensures the zoom settles completely once active, preventing "chatter" (rapid start/stop).
 

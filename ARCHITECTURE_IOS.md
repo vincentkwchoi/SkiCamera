@@ -101,38 +101,17 @@ The application uses `PHAssetCreationRequest` to save videos directly to the **P
 | Launch State | Access Level | Storage Destination |
 | :--- | :--- | :--- |
 | **Unlocked (Main App)** | Full | **Photo Library** (`PHAssetCreationRequest`) |
-| **Locked (Extension)** | Restricted | **Session Container** (`session.sessionContentURL`) |
+| **Locked (Extension)** | Restricted (Write-Only) | **Photo Library** (`PHAssetCreationRequest`) |
 
-### Unlocked Capture Logic
-When the app is launched normally (unlocked), it has full access to system resources.
-1.  **Config**: `AppStorageConfigProvider` initializes with `isLockedCapture = false`.
-2.  **Save**: `CaptureProcessor` uses `PHAssetCreationRequest` to save the video directly to the user's **Photo Library**.
-3.  **No Import Needed**: The file is immediately available in the Photos app.
+### Unified Capture Logic
+Since iOS 18, the `LockedCameraCaptureExtension` is granted specific permissions to **write** to the Photo Library during an active capture session, even without full library read access.
 
-### Locked Capture Logic
-When the device is locked, the `LockedCameraCaptureExtension` runs in a restricted sandbox that **cannot access the Photo Library**. To persist videos:
+1.  **Capture**: Video is recorded to a temporary file.
+2.  **Save**: `CaptureProcessor` initiates a `PHPhotoLibrary` change request.
+3.  **Result**: The video appears immediately in the user's Photos app.
+4.  **Cleanup**: The temporary file is deleted.
 
-1.  **Detection**: `AppStorageConfigProvider` detects the locked state (`isLockedCapture = true`) when initialized with a `LockedCameraCaptureSession`.
-2.  **Redirect**: `CaptureProcessor` checks this flag.
-3.  **Save**: Instead of calling `PHPhotoLibrary`, it performs a file copy to `session.sessionContentURL`.
-    *   Files in this directory are temporarily persisted by the system in a shared container.
-4.  **Logging**: Detailed debug logs are printed to verify the save operation:
-    ```
-    Locked Capture: Successfully saved video.
-      - Source: file:///private/var/.../tmp/video.mov
-      - Destination: file:///private/var/.../LockedCameraCapture/session_id/video.mov
-      - Size: 1845293 bytes
-    ```
-
-### Import on Unlock (Main App)
-Since locked videos are not immediately visible in Photos, the **Main App** is responsible for importing them when the user unlocks the device.
-
-1.  **Launch**: `SkiCameraIOSApp` (DemoApp.swift) initializes `SessionImporter`.
-2.  **Scan**: It scans `LockedCameraCaptureManager.shared.sessionContentURLs` for any existing sessions.
-3.  **Import**: It iterates through found directories, saves `.mov` files to the **Photo Library**, and deletes the originals to free up space.
-4. log debug message "Found session at URL: ..."
-
-This ensures a seamless experience: Users record quickly from the lock screen, and the videos appear in their Photos library as soon as they unlock the app.
+This eliminates the need for manual file management or "Import" steps.
 ## 6. User Interface & Debug Overlay
 
 To assist with testing and verification in the field, a dense debug overlay is rendered on top of the camera preview.
@@ -146,14 +125,7 @@ Located at the top-left of the screen, providing real-time telemetry:
 *   **Skier Height**: Estimated normalized height of the tracked skier (0.0 - 1.0).
 *   **Zoom Factor**: True hardware video zoom factor (e.g., `2.50x`).
 
-#### 2. Import Button (Main App Only)
-Because the locked extension cannot access the photo library, an **Import Overlay** appears in the main app when triggered:
-*   **Trigger**: App launch or `sessionImporter.scanForSessions()`.
-*   **Condition**: Valid video files found in the shared `sessionContentURL` container.
-*   **UI**:
-    *   **Info Box**: "Found **X** Ski Videos" (Top Center).
-    *   **Action Button**: "Click to Import" (Yellow Button).
-    *   **Behavior**: Tapping the button saves videos to Photos and deletes the temp files.
+
 
 #### 3. Bounding Boxes
 *   **Gray Box**: All person detections returned by YOLOv8.
@@ -165,15 +137,15 @@ This table maps the logical components defined in [AUTOZOOM_ALGORITHM.md](AUTOZO
 
 | Algorithm Phase | Logical Component | iOS Implementation Class | Code Implementation Notes |
 | :--- | :--- | :--- | :--- |
-| **Phase A**<Br>*(Perception)* | **1. Detection** | `SkierAnalyzer` | `analyze()` uses `VNCoreMLRequest` with YOLOv8. |
-| | **2. Selection** | `SkierAnalyzer` | `analyze()` logic performs "Sticky Tracking" (closest to last center) to select target. |
+| **Phase A**<Br>*(Perception)* | **1. Detection** | `SkierDetection` | Wraps Vision/CoreML (YOLOv8) to return `[Rect]`. |
+| | **2. Selection** | `SkierSelection` | Uses `ByteTrackTracker` (Kalman Filter + Matching) to maintain ID lock. |
 | | **3. Smoothing** | `AutoZoomManager` | `SmoothingFilter` classes for Height, CenterX, CenterY. |
 | **Phase B**<br>*(Decision)* | **4. Target Calc** | `AutoZoomManager` | `update()` calculates `zoomError` based on `targetSubjectHeightRatio`. |
-| | **5. Hysteresis** | `AutoZoomManager` | `update()` checks `zoomTriggerThreshold` / `zoomStopThreshold` before setting `isZooming`. |
+| | **5. Hysteresis** | `HysteresisGate` | Checks `relativeError` against 15% / 5% thresholds. |
 | **Phase C**<br>*(Control)* | **6. Control Logic** | `AutoZoomManager` | `update()` applies Proportional control to modify `currentZoomScale`. |
 | | **7. Log Scaling** | `AutoZoomManager` | `currentZoomScale` (inverse zoom) inherently acts continuously. |
-| **Phase D**<br>*(Safety)* | **8. Constraint** | `AutoZoomManager` | `update()` clamps `currentZoomScale` between 0.05 (20x) and 1.0 (1x). |
-| **Output** | **9. Update Zoom** | `AutoZoomService` | `processFrame()` reads the `Rect` from Manager and calls `device.ramp` or `lockForConfiguration`. |
+| **Phase D**<br>*(Safety)* | **8. Constraint** | `ZoomConstraint` | Clamps `videoZoomFactor` between 1.0 (1x) and 20.0 (20x). |
+| **Output** | **9. Update Zoom** | `AutoZoomService` | `processFrame()` reads the `Rect` from Manager and calls `device.ramp`. |
 
 ## 8. Verification Test Cases
 
@@ -186,11 +158,6 @@ This test verifies that the app correctly handles the "Power Button to Stop" lif
     *   Stop the recording.
     *   Lock the screen and turn off the display.
     *   **Crucial**: The `CaptureProcessor` must catch the stop event and save the video to the Session Container despite the app entering the background.
-4.  **Verify (Unlocked)**: Unlock the phone and open the **Main SkiCamera App**.
-5.  **Check UI**:
-    *   Look for the **Import Overlay** at the top.
-    *   It should read **"Found 1 Ski Videos"**.
-6.  **Import**: Tap **"Click to Import"**.
-    *   Status should change to "Importing...".
-    *   Button should disappear after completion.
-7.  **Final Check**: Open **Photos App** and verify the new video is present.
+4.  **Verify (Unlocked)**: Unlock the phone and open the **Photos App**.
+5.  **Check**: The new video should be present in the Recents album.
+    *   It should have saved *immediately* upon stopping, even while locked.
