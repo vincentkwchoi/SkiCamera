@@ -46,6 +46,8 @@ struct LockedCameraCaptureView: View {
             }
             .onCameraCaptureEvent { event in
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "LockedExtension")
+                
+                logger.log(level: .default, "=========================");
                 switch event.phase {
                 case .began:
                     logger.log(level: .default, "Capture event began")
@@ -54,6 +56,7 @@ struct LockedCameraCaptureView: View {
                 case .cancelled:
                     logger.log(level: .default, "Capture event cancelled - ensuring recording stops")
                     NotificationCenter.default.post(name: Notification.Name("LockedCameraStopRecording"), object: nil)
+                    
                 @unknown default:
                     break
                 }
