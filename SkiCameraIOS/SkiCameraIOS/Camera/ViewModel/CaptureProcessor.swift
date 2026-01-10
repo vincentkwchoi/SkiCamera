@@ -94,56 +94,20 @@ class CaptureProcessor: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
     }
     
     private nonisolated func saveMovieToLibraryInternal(_ fileURL: URL) async -> Bool {
-        if configProvider.isLockedCapture {
-            // In Locked Capture, we save to the session's content URL (shared location).
-            guard let rootURL = configProvider.rootURL else {
-                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
-                logger.log(level: .default, "Locked Capture: No rootURL available")
-                return false
-            }
-            
-            let destinationURL = rootURL.appendingPathComponent(fileURL.lastPathComponent)
-            
-            do {
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
-                try FileManager.default.copyItem(at: fileURL, to: destinationURL)
-                
-                let attributes = try? FileManager.default.attributesOfItem(atPath: destinationURL.path)
-                let fileSize = attributes?[.size] as? Int64 ?? -1
-                
-                // Use a local logger if instance isn't available (nonisolated)
-                // But Logger is Sendable, we can capture 'self.logger' if allow implicit self capture,
-                // OR just create a new one. Since 'self' is isolated to main actor implied by ObservableObject/NSObject?
-                // Actually 'saveMovieToLibraryInternal' is 'nonisolated', so we can't access 'self.logger' if it serves MainActor property?
-                // Logger struct is thread safe. Let's create local logger to be safe and clean.
-                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
-                
-                logger.log(level: .default, "Locked Capture: Successfully saved video.")
-                logger.log(level: .default, "  - Source: \(fileURL.path, privacy: .public)")
-                logger.log(level: .default, "  - Destination: \(destinationURL.path, privacy: .public)")
-                logger.log(level: .default, "  - Size: \(fileSize) bytes")
-                
-                // Cleanup temp file
-                try? FileManager.default.removeItem(at: fileURL)
-                return true
-            } catch {
-                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
-                logger.log(level: .default, "Locked Capture: Failed to save video.")
-                logger.log(level: .default, "  - Source: \(fileURL.path, privacy: .public)")
-                logger.log(level: .default, "  - Destination: \(destinationURL.path, privacy: .public)")
-                logger.log(level: .default, "  - Error: \(error.localizedDescription)")
-                return false
-            }
-        }
+        // We now use PhotoKit for BOTH Locked and Unlocked modes.
+        // Locked Camera Extensions support writing to PhotoKit even when locked.
         
         return await withCheckedContinuation { continuation in
             PHPhotoLibrary.shared().performChanges {
                 PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
             } completionHandler: { success, error in
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
-                logger.log(level: .default, "saveMovieToLibrary, success: \(success), error: \(String(describing: error))")
+                if success {
+                    logger.log(level: .default, "saveMovieToLibrary: Successfully saved to Photos")
+                } else {
+                    logger.log(level: .default, "saveMovieToLibrary failed: \(String(describing: error))")
+                }
+                
                 // Cleanup temp file
                 try? FileManager.default.removeItem(at: fileURL)
                 continuation.resume(returning: success)
