@@ -8,7 +8,7 @@ class SkierSelection {
     // 3. If NOT found (lost), fall back to finding the "best" candidate (closest to center) to re-acquire (or start fresh).
     
     private var lockedTrackID: Int?
-    private let tracker = Tracker()
+    private let tracker = ByteTrack() // Updated to use ByteTrack
     
     // For "closest to center" fallback
     private var lastKnownCenter: CGPoint?
