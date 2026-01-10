@@ -65,20 +65,35 @@ class CaptureProcessor: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
             return
         }
         
-        Task {
-            let success = await saveMovieToLibraryInternal(outputFileURL)
-            Task { @MainActor in
-                saveResultText = success ? "Saved" : "Save Failed"
-                if success {
-                    onSaveSuccess?()
-                }
-            }
+        // Use the centralized save logic
+        Task { @MainActor in
+            await saveMovieToLibrary(outputFileURL)
         }
     }
     
     @MainActor
     private func saveMovieToLibrary(_ fileURL: URL) async {
-        let success = await saveMovieToLibraryInternal(fileURL)
+        // Use PhotoKit for saving
+        let success = await withCheckedContinuation { continuation in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
+            } completionHandler: { success, error in
+                // Logic runs on arbitrary queue, so capturing logger or self is tricky if not careful.
+                // But we are inside an async function on MainActor.
+                // The completion handler is escaping.
+                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
+                if success {
+                    logger.log(level: .default, "saveMovieToLibrary: Successfully saved to Photos")
+                } else {
+                    logger.log(level: .default, "saveMovieToLibrary failed: \(String(describing: error))")
+                }
+                
+                // Cleanup temp file
+                try? FileManager.default.removeItem(at: fileURL)
+                continuation.resume(returning: success)
+            }
+        }
+        
         saveResultText = success ? "Video Saved to Photos" : "Failed to save video"
         
         if success {
@@ -93,32 +108,30 @@ class CaptureProcessor: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
         }
     }
     
-    private nonisolated func saveMovieToLibraryInternal(_ fileURL: URL) async -> Bool {
-        // We now use PhotoKit for BOTH Locked and Unlocked modes.
-        // Locked Camera Extensions support writing to PhotoKit even when locked.
+    @MainActor
+    private func savePhotoToLibrary(_ photo: AVCapturePhoto) async {
+        let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
+
+        guard let photoData = photo.fileDataRepresentation() else {
+            logger.log(level: .default, "can't get photoData")
+            saveResultText = "Failed to process photo"
+            return
+        }
         
-        return await withCheckedContinuation { continuation in
+        // Save directly using Data (no temp file needed)
+        let success = await withCheckedContinuation { continuation in
             PHPhotoLibrary.shared().performChanges {
-                PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
+                let options = PHAssetResourceCreationOptions()
+                // We can just use the standard creation request for data
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, data: photoData, options: options)
             } completionHandler: { success, error in
-                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
-                if success {
-                    logger.log(level: .default, "saveMovieToLibrary: Successfully saved to Photos")
-                } else {
-                    logger.log(level: .default, "saveMovieToLibrary failed: \(String(describing: error))")
-                }
-                
-                // Cleanup temp file
-                try? FileManager.default.removeItem(at: fileURL)
+                logger.log(level: .default, "savePhotoToLibrary, success: \(success), error: \(String(describing: error))")
                 continuation.resume(returning: success)
             }
         }
-    }
-    
-    @MainActor
-    private func savePhotoToLibrary(_ photo: AVCapturePhoto) async {
-        let saved = await savePhotoToLibraryInternal(photo)
-        if saved {
+        
+        if success {
             saveResultText = "Saved to Photo Library"
         } else {
             saveResultText = "Failed to save, see the console for more details"
@@ -129,45 +142,6 @@ class CaptureProcessor: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
             saveResultText = ""
         } catch {
             // ignored
-        }
-    }
-    
-    private nonisolated func savePhotoToLibraryInternal(_ photo: AVCapturePhoto) async -> Bool {
-        let logger = Logger(subsystem: "com.vcnt.skicamera", category: "CaptureProcessor")
-        
-        guard let photoData = photo.fileDataRepresentation() else {
-            logger.log(level: .default, "can't get photoData")
-            return false
-        }
-        
-        // Saving the data to a file isn't strictly necessary since
-        // PHAssetCreationRequest can accept Data directly.
-        // However, this example demonstrates saving the photo data to a temporary file
-        // using a container URL provided by the environment.
-        guard let fileURL = configProvider.rootURL?.appendingPathComponent(
-            UUID().uuidString,
-            conformingTo: .heic
-        ) else {
-            logger.log(level: .default, "can't get fileURL")
-            return false
-        }
-        
-        logger.log(level: .default, "savePhotoToLibraryInternal, fileURL is \(fileURL.path, privacy: .public)")
-        
-        do {
-            try photoData.write(to: fileURL)
-        } catch {
-            logger.log(level: .default, "savePhotoToLibraryInternal, failed to write to file \(error.localizedDescription)")
-            return false
-        }
-        
-        return await withCheckedContinuation { continuation in
-            PHPhotoLibrary.shared().performChanges {
-                let _ = PHAssetCreationRequest.creationRequestForAssetFromImage(atFileURL: fileURL)
-            } completionHandler: { success, error in
-                logger.log(level: .default, "savePhotoToLibrary, success: \(success), error: \(String(describing: error))")
-                continuation.resume(returning: success)
-            }
         }
     }
 }
