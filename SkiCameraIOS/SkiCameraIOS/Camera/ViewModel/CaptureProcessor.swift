@@ -94,7 +94,7 @@ class CaptureProcessor: NSObject, ObservableObject, AVCapturePhotoCaptureDelegat
             }
         }
         
-        saveResultText = success ? "Video Saved to Photos" : "Failed to save video"
+        saveResultText = success ? "" : "Failed to save video"
         
         if success {
             onSaveSuccess?()

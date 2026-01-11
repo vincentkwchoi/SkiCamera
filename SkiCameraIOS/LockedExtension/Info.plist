@@ -7,5 +7,9 @@
 		<key>EXExtensionPointIdentifier</key>
 		<string>com.apple.securecapture</string>
 	</dict>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>We use speech recognition to allow you to control the camera hands-free while skiing.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We use the microphone to record audio for your videos and for voice commands.</string>
 </dict>
 </plist>

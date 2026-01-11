@@ -193,7 +193,7 @@ class AutoZoomService: ObservableObject {
      @Published var currentZoom: CGFloat = 1.0
      @Published var buttonStatus: String = "No button pressed"
 
-     func startZoomingIn() {
+     func startZoomingIn(rate: Float = 2.0) {
         guard let device = videoDevice else { return }
         if !isManualZoomMode {
             logger.log(level: .default, "Switching to Manual Zoom (Zoom In)")
@@ -206,7 +206,7 @@ class AutoZoomService: ObservableObject {
         do {
             try device.lockForConfiguration()
             let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 10.0)
-            device.ramp(toVideoZoomFactor: maxZoom, withRate: 2.0) // 2x per second
+            device.ramp(toVideoZoomFactor: maxZoom, withRate: rate) // User defined rate
             device.unlockForConfiguration()
         } catch {
             logger.log(level: .default, "Failed to start ramp: \(error.localizedDescription)")
@@ -218,7 +218,7 @@ class AutoZoomService: ObservableObject {
         }
     }
     
-    func startZoomingOut() {
+    func startZoomingOut(rate: Float = 2.0) {
         guard let device = videoDevice else { return }
         if !isManualZoomMode {
             logger.log(level: .default, "Switching to Manual Zoom (Zoom Out)")
@@ -230,7 +230,7 @@ class AutoZoomService: ObservableObject {
         
         do {
             try device.lockForConfiguration()
-            device.ramp(toVideoZoomFactor: 1.0, withRate: 2.0)
+            device.ramp(toVideoZoomFactor: 1.0, withRate: rate)
             device.unlockForConfiguration()
         } catch {
              logger.log(level: .default, "Failed to start ramp: \(error.localizedDescription)")

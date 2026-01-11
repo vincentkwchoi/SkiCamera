@@ -16,6 +16,8 @@ struct ContentView: View {
     @StateObject private var viewModel: MainViewModel
     @StateObject private var captureProcessor: CaptureProcessor
     @StateObject private var autoZoomService: AutoZoomService
+    @StateObject private var cueManager = UserCueManager()
+    @StateObject private var voiceControl = VoiceControlService()
     
     /// Construct ``ContentView`` given the instance of ``AppStorageConfigProvider``, which provides the information
     /// about the current environment.
@@ -44,6 +46,8 @@ struct ContentView: View {
     // Auto-Recording State
     @State private var countdown: Int = 5
     @State private var isRecording: Bool = false
+    @State private var showDebug: Bool = false
+    @State private var showHelp: Bool = false
     @State private var hasAutoResumed: Bool = false
     
     var body: some View {
@@ -97,8 +101,22 @@ struct ContentView: View {
                     }
                 }
                     .overlay(alignment: .top) {
+                        // Persistent Status Top Bar
+                        Text(autoZoomService.isManualZoomMode ? "Manual Zoom" : "Auto Zoom")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .shadow(color: .black, radius: 2)
+                            .padding(.top, 20) // Adjust for safe area / Dynamic Island
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
+                                    .frame(height: 100)
+                                    .ignoresSafeArea()
+                            )
+                        
                         // Debug Info Overlay
-                        VStack(alignment: .leading) {
+                        if showDebug {
+                            VStack(alignment: .leading) {
                             Text(autoZoomService.isManualZoomMode ? "MANUAL ZOOM" : "AUTO ZOOM")
                                 .foregroundColor(autoZoomService.isManualZoomMode ? .orange : .green)
                             Text(captureProcessor.configProvider.isLockedCapture ? "LOCKED" : "UNLOCKED")
@@ -118,6 +136,21 @@ struct ContentView: View {
                         .background(Color.black.opacity(0.5))
                         .cornerRadius(8)
                         .padding(.top, 40)
+                        }
+                        
+                        // Help Button (Top Left)
+                        Button(action: { showHelp = true }) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
+                                .shadow(radius: 2)
+                                .padding()
+                                .background(Color.black.opacity(0.3))
+                                .clipShape(Circle())
+                        }
+                        .padding(.top, 50)
+                        .padding(.leading, 20)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                     .overlay(alignment: .center) {
                         // Countdown Overlay
@@ -126,24 +159,22 @@ struct ContentView: View {
                                 .font(.system(size: 120, weight: .black, design: .rounded))
                                 .foregroundColor(.white)
                                 .shadow(color: .black, radius: 10)
-                        } else if isRecording {
-                            // Minimal Recording Indicator
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 20, height: 20)
-                                .padding()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                                .padding(.top, 40)
                         }
                     }
                     .overlay(alignment: .bottom) {
-                        if isRecording {
-                            Button(action: {
-                                let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                        Button(action: {
+                            let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+                            if isRecording {
                                 logger.log(level: .default, "Stop Button Pressed")
                                 viewModel.stopRecording()
                                 isRecording = false
-                            }) {
+                            } else {
+                                logger.log(level: .default, "Start Button Pressed")
+                                viewModel.startRecording()
+                                isRecording = true
+                            }
+                        }) {
+                             if isRecording {
                                 Image(systemName: "stop.circle.fill")
                                     .resizable()
                                     .symbolRenderingMode(.palette)
@@ -151,7 +182,15 @@ struct ContentView: View {
                                     .frame(width: 80, height: 80)
                                     .shadow(radius: 4)
                                     .padding(.bottom, 50)
-                            }
+                             } else {
+                                 Image(systemName: "record.circle")
+                                     .resizable()
+                                     .symbolRenderingMode(.palette)
+                                     .foregroundStyle(.red, .white)
+                                     .frame(width: 80, height: 80)
+                                     .shadow(radius: 4)
+                                     .padding(.bottom, 50)
+                             }
                         }
                     }
                 
@@ -170,8 +209,14 @@ struct ContentView: View {
                     .padding(12)
             }
         }
+        .overlay {
+            UserCueView(manager: cueManager)
+        }
         .background {
             Color.black.ignoresSafeArea()
+        }
+        .sheet(isPresented: $showHelp) {
+            HelpView()
         }
         .animation(.default, value: viewModel.isSettingUpCamera)
         .animation(.default, value: captureProcessor.saveResultText)
@@ -186,6 +231,10 @@ struct ContentView: View {
                         logger.log(level: .default, "Stopping Recording via Double Click")
                         viewModel.stopRecording()
                         isRecording = false
+                    } else {
+                        logger.log(level: .default, "Starting Recording via Double Click")
+                        viewModel.startRecording()
+                        isRecording = true
                     }
                     lastVolDownPressTime = nil // Reset to avoid triple click issues
                     return
@@ -196,17 +245,21 @@ struct ContentView: View {
                 logger.log(level: .default, "Volume DOWN pressed (Primary)")
                 // Primary action (Volume Down / Shutter)
                 isVolDownPressed = true
+                
+                // Voice / Button Unification: Use shared logic?
+                // For now, keep as is
                 if isVolUpPressed {
-                    autoZoomService.resetToAutoZoom()
+                    performAutoZoom()
                 } else {
-                    autoZoomService.buttonStatus = "Volume DOWN held"
-                    autoZoomService.startZoomingOut()
+                    performZoomOut(rate: 2.0)
                 }
             },
             onRelease: {
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
                 logger.log(level: .default, "Volume DOWN released")
                 isVolDownPressed = false
+                autoZoomService.buttonStatus = "Volume DOWN released"
+                autoZoomService.stopZooming()
                 autoZoomService.buttonStatus = "Volume DOWN released"
                 autoZoomService.stopZooming()
             },
@@ -220,6 +273,10 @@ struct ContentView: View {
                         logger.log(level: .default, "Stopping Recording via Double Click")
                         viewModel.stopRecording()
                         isRecording = false
+                    } else {
+                        logger.log(level: .default, "Starting Recording via Double Click")
+                        viewModel.startRecording()
+                        isRecording = true
                     }
                     lastVolUpPressTime = nil // Reset
                     return
@@ -228,19 +285,19 @@ struct ContentView: View {
 
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
                 logger.log(level: .default, "Volume UP pressed (Secondary)")
-                // Secondary action (Volume Up)
                 isVolUpPressed = true
                 if isVolDownPressed {
-                    autoZoomService.resetToAutoZoom()
+                    performAutoZoom()
                 } else {
-                    autoZoomService.buttonStatus = "Volume UP held"
-                    autoZoomService.startZoomingIn()
+                    performZoomIn(rate: 2.0)
                 }
             },
             secondaryRelease: {
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
                 logger.log(level: .default, "Volume UP released")
                 isVolUpPressed = false
+                autoZoomService.buttonStatus = "Volume UP released"
+                autoZoomService.stopZooming()
                 autoZoomService.buttonStatus = "Volume UP released"
                 autoZoomService.stopZooming()
             }
@@ -250,6 +307,13 @@ struct ContentView: View {
             case .active:
                 let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
                 logger.log(level: .default, "Scene Phase: Active")
+                // Show launch cue
+                cueManager.show(.launch)
+                
+                // Start Voice Control
+                voiceControl.requestAuthorization()
+                try? voiceControl.startListening()
+                
                 await viewModel.updateFromAppContext()
                 await viewModel.setup()
                 
@@ -317,5 +381,84 @@ struct ContentView: View {
                 await viewModel.stopCamera()
             }
         }
+        .onChange(of: isRecording) { newValue in
+            if newValue {
+                cueManager.show(.recordingStarted)
+            } else {
+                cueManager.show(.recordingStopped)
+            }
+        }
+        .onChange(of: voiceControl.lastCommand) { event in
+            guard let event = event else { return }
+            let cmd = event.command
+            let logger = Logger(subsystem: "com.vcnt.skicamera", category: "ContentView")
+            logger.log(level: .default, "Voice Command Received: \(String(describing: cmd))")
+            
+            // Provide Feedback
+            if let text = voiceCommandText(cmd) {
+                cueManager.show(.custom(text))
+            }
+            
+            switch cmd {
+            case .startRecording:
+                if !isRecording {
+                    viewModel.startRecording()
+                    isRecording = true
+                }
+            case .stopRecording:
+                if isRecording {
+                    viewModel.stopRecording()
+                    isRecording = false
+                }
+            case .zoomIn:
+                performZoomIn(rate: 1.0)
+            case .zoomOut:
+                performZoomOut(rate: 1.0)
+            case .stopZoom:
+                autoZoomService.stopZooming()
+            case .autoZoom:
+                performAutoZoom()
+            case .photo:
+                // Not implemented in MainViewModel yet, ignore or add if easy
+                break
+            case .debugOn:
+                showDebug = true
+                // No cue as per documentation
+            case .debugOff:
+                showDebug = false
+                // No cue as per documentation
+            }
+        }
+    }
+    
+    private func voiceCommandText(_ cmd: VoiceControlService.VoiceCommand) -> String? {
+        switch cmd {
+        case .startRecording: return "Recording"
+        case .stopRecording: return "Recording Saved"
+        case .zoomIn: return "Zoom In"
+        case .zoomOut: return "Zoom Out"
+        case .stopZoom: return nil
+        case .autoZoom: return "Auto Zoom Enabled"
+        case .photo: return "Photo"
+        case .debugOn: return nil
+        case .debugOff: return nil
+        }
+    }
+    
+    private func performZoomIn(rate: Float = 2.0) {
+        cueManager.show(.custom("Zoom In"))
+        autoZoomService.buttonStatus = "Manual Zoom In"
+        autoZoomService.startZoomingIn(rate: rate)
+    }
+    
+    private func performZoomOut(rate: Float = 2.0) {
+        cueManager.show(.custom("Zoom Out"))
+        autoZoomService.buttonStatus = "Manual Zoom Out"
+        autoZoomService.startZoomingOut(rate: rate)
+    }
+    
+    private func performAutoZoom() {
+        cueManager.show(.custom("Auto Zoom Enabled"))
+        autoZoomService.resetToAutoZoom()
     }
 }
